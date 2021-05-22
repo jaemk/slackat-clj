@@ -9,10 +9,10 @@
             [honeysql-postgres.format :refer :all]
             [honeysql-postgres.helpers :as pg]
             [slackat.utils :as u]
-            [taoensso.timbre :as t]))
-  ;(:import (clojure.lang Keyword)
-  ;         (org.postgresql.util PGobject)
-  ;         (java.sql ResultSetMetaData)))
+            [taoensso.timbre :as t])
+  (:import (clojure.lang Keyword)
+           (org.postgresql.util PGobject)
+           (java.sql ResultSetMetaData)))
 
 
 ; ----- datasource config ------
@@ -38,66 +38,67 @@
 
 
 ; ----- postgres/jdbc/honeysql extensions ------
-;(defn kw-namespace->enum-type [namespace']
-;  (s/assert ::types/registered-kw-namespace namespace')
-;  (u/kebab->under namespace'))
-;
-;(defn kw->pg-enum [kw]
-;  "Converts a namespaced keyword to a jdbc/postgres enum"
-;  (let [type (-> (namespace kw)
-;                 (kw-namespace->enum-type))
-;        value (name kw)]
-;    (doto (PGobject.)
-;      (.setType type)
-;      (.setValue value))))
-;
-;
-;(extend-type Keyword
-;  j/ISQLValue
-;  (sql-value [kw]
-;    "Extends keywords to be auto-converted by jdbc to postgres enums"
-;    (kw->pg-enum kw)))
-;
-;
-;(defn kw-to-sql [kw]
-;  "Copy of honeysql's internal Keyword to-sql functionality"
-;  (let [s (name kw)]
-;    (case (.charAt s 0)
-;      \% (let [call-args (string/split (subs s 1) #"\." 2)]
-;           (honeysql.format/to-sql (apply honeysql.types/call (map keyword call-args))))
-;      \? (honeysql.format/to-sql (honeysql.types/param (keyword (subs s 1))))
-;      (honeysql.format/quote-identifier kw))))
-;
-;(extend-protocol honeysql.format/ToSql
-;  Keyword
-;  (to-sql [kw]
-;    "Extends honeysql to convert namespaced keywords to pg enums"
-;    (let [type (namespace kw)]
-;      (if (nil? type)
-;        (kw-to-sql kw) ;; do default honeysql conversions
-;        (let [type (kw-namespace->enum-type type)
-;              enum-value (format "'%s'::%s" (name kw) type)]
-;          enum-value)))))
-;
-;
-;(def +schema-enums+
-;  "A set of all PostgreSQL enums in schema.sql. Used to convert
-;  enum-values back into namespaced keywords."
-;  (->> types/kw-namespaces
-;       (map u/kebab->under)
-;       (set)))
-;
-;
-;(extend-type String
-;  j/IResultSetReadColumn
-;  (result-set-read-column [val
-;                           ^ResultSetMetaData rsmeta
-;                           idx]
-;    "Hook in enum->keyword conversion for all registered `schema-enums`"
-;    (let [type (.getColumnTypeName rsmeta idx)]
-;      (if (contains? +schema-enums+ type)
-;        (keyword (u/under->kebab type) val)
-;        val))))
+;; todo: move this to a different namespace
+(defn kw-namespace->enum-type [namespace']
+  "Convert a keyword's namespace to a postgres enum type's name"
+  ;; todo: add the schema here if necessary, define in the +schema-enums+ map
+  (u/kebab->under namespace'))
+
+(defn kw->pg-enum [kw]
+  "Converts a namespaced keyword to a jdbc/postgres enum"
+  (let [type (-> (namespace kw)
+                 (kw-namespace->enum-type))
+        value (name kw)]
+    (doto (PGobject.)
+      (.setType type)
+      (.setValue value))))
+
+
+(extend-type Keyword
+  j/ISQLValue
+  (sql-value [kw]
+    "Extends keywords to be auto-converted by jdbc to postgres enums"
+    (kw->pg-enum kw)))
+
+
+(defn kw-to-sql [kw]
+  "Copy of honeysql's internal Keyword to-sql functionality so we can extend
+  the ToSql protocol below"
+  (let [s (name kw)]
+    (case (.charAt s 0)
+      \% (let [call-args (string/split (subs s 1) #"\." 2)]
+           (honeysql.format/to-sql (apply honeysql.types/call (map keyword call-args))))
+      \? (honeysql.format/to-sql (honeysql.types/param (keyword (subs s 1))))
+      (honeysql.format/quote-identifier kw))))
+
+(extend-protocol honeysql.format/ToSql
+  Keyword
+  (to-sql [kw]
+    "Extends honeysql to convert namespaced keywords to pg enums"
+    (let [type (namespace kw)]
+      (if (nil? type)
+        (kw-to-sql kw) ;; do default honeysql conversions
+        (let [type (kw-namespace->enum-type type)
+              enum-value (format "'%s'::%s" (name kw) type)]
+          enum-value)))))
+
+
+(def +schema-enums+
+  "A set of all PostgreSQL enums in schema.sql. Used to convert
+  enum-values back into namespaced keywords."
+  #{"slack_token_type"})
+
+
+(extend-type String
+  j/IResultSetReadColumn
+  (result-set-read-column [val
+                           ^ResultSetMetaData rsmeta
+                           idx]
+    "Hook in enum->keyword conversion for all registered `schema-enums`"
+    (let [type (.getColumnTypeName rsmeta idx)]
+      (if (contains? +schema-enums+ type)
+        (keyword (u/under->kebab type) val)
+        val))))
 
 
 ; ----- helpers ------
@@ -159,51 +160,60 @@
                 (first-or-err first-err-key))]
     (j/query conn
              (-> stmt
-                 sql/format)
+                 sql/format
+                 u/spy)
              {:row-fn        row-fn
               :result-set-fn rs-fn})))
 
 
 
 ; ----- database queries ------
-(defn create-token [conn {nonce      :nonce
-                          iv         :iv
-                          bot_id     :bot-id
-                          bot_token  :bot-token
-                          bot_scope  :bot-scope
-                          user_id    :user-id
-                          user_scope :user-scope
-                          user_token :user-token}]
-  (j/with-db-transaction [trans conn]
-                         (let [token
-                               (insert!
-                                 trans
-                                 (-> (h/insert-into :slackat.tokens)
-                                     (h/values [{
-                                                 :nonce nonce
-                                                 :iv iv
-                                                 :bot_id bot_id
-                                                 :bot_scope bot_scope
-                                                 :bot_token bot_token
-                                                 :user_id user_id
-                                                 :user_scope user_scope
-                                                 :user_token user_token}])))]
-                           token)))
+(defn upsert-slack-token [conn {nonce         :nonce
+                                iv            :iv
+                                type          :type
+                                slack-id      :slack-id
+                                slack-team-id :slack-team-id
+                                scope         :scope
+                                encrypted     :encrypted}]
+  (insert!
+   conn
+   (-> (h/insert-into :slackat.slack_tokens)
+       (h/values [{
+                   :nonce nonce
+                   :iv iv
+                   :type type
+                   :slack_id slack-id
+                   :slack_team_id slack-team-id
+                   :scope scope
+                   :encrypted encrypted}])
+       (pg/upsert (-> (pg/on-conflict :type :slack-id :slack-team-id)
+                      (pg/do-update-set! [:modified (sql/call :now)] [:nonce nonce] [:iv iv] [:encrypted encrypted] [:scope scope]))))))
+
+(defn get-all-slack-tokens-count [conn]
+  (query
+    conn
+    (-> (h/select [(sql/call :count :*) :count])
+        (h/from :slackat.slack_tokens))
+    :first-err-key :db-get/all-slack-tokens-count))
 
 
-(defn get-token-for-user [conn user-id]
-  (t/info "loading user token" {:user-id user-id})
+(defn get-token-for-user [conn slack-user-id slack-team-id]
+  (t/info "loading user token" {:user-id slack-user-id :team-id slack-team-id})
   (query conn
          (-> (h/select :*)
-             (h/from :slackat.tokens)
-             (h/where [:= :user_id user-id])
+             (h/from :slackat.slack_tokens)
+             (h/where [:= :slack_id slack-user-id]
+                      [:= :slack_team_id slack-team-id]
+                      [:= :type :slack-token-type/user])
              (h/order-by [:created :desc]))
          :first-err-key :db-get/token))
 
-(defn get-tokens-for-user [conn user-id]
-  (t/info "loading user token" {:user-id user-id})
+(defn get-tokens-for-user [conn slack-user-id slack-team-id]
+  (t/info "loading user token" {:user-id slack-user-id :team-id slack-team-id})
   (query conn
          (-> (h/select :*)
-             (h/from :slackat.tokens)
-             (h/where [:= :user_id user-id])
+             (h/from :slackat.slack_tokens)
+             (h/where [:= :slack_id slack-user-id]
+                      [:= :slack_team_id slack-team-id]
+                      [:= :type :slack-token-type/user])
              (h/order-by [:created :desc]))))

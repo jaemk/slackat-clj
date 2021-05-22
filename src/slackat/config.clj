@@ -24,6 +24,10 @@
 
 (def num-cpus (.availableProcessors (Runtime/getRuntime)))
 
+(defn not-nil [msg x]
+  (if (nil? x)
+    (u/ex-error! msg)
+    x))
 
 (def values
   (delay
@@ -51,6 +55,10 @@
                   (env "SLACK_CLIENT_ID")
      :slack-client-secret
                   (env "SLACK_CLIENT_SECRET")
+
+     :encryption-key
+                  (env "ENCRYPTION_KEY" :parse (partial not-nil "ENCRYPTION_KEY is a required env var"))
+     :signing-key (env "SIGNING_KEY" :parse (partial not-nil "SIGNING_KEY is a required env var"))
 
      :slack-user-token
                   (env "SLACK_USER_TOKEN")

@@ -17,34 +17,57 @@
    (before :facts (truncate-db test-db))]
   (facts
     (fact
-      "we can create users and items"
+      "we can upsert slack tokens"
       ; db is setup
       (nil? @test-db) => false
 
-      ; create and save a user
-      (db/create-token
+      ; create and save a token
+      (db/upsert-slack-token
         (:conn @test-db)
         {:nonce "1"
          :iv "1"
-         :bot-id "1"
-         :bot-token "1"
-         :bot-scope "1"
-         :user-id "bean"
-         :user-scope "1"
-         :user-token "1"}) =>
-        (fn [result]
-          (swap! state #(merge % result)) ; save for later
-          (= (-> result :user_id) "bean"))
+         :type :slack-token-type/user
+         :slack-id "USER1"
+         :slack-team-id "TEAM1"
+         :scope "read,write"
+         :encrypted "xxx"}) =>
+      (fn [result]
+        (swap! state #(assoc % :slack-token result)) ; save for later
+        (and
+          (= (-> result :slack_id) "USER1")
+          (= (-> result :type) :slack-token-type/user)
+          (= (-> result :slack_team_id) "TEAM1")))
 
-      ; lookup by user-id
+      ; lookup by user & team
       (db/get-token-for-user
         (:conn @test-db)
-        "bean") =>
-        (fn [result]
-          (= (-> result :id) (:id @state))))
+        "USER1"
+        "TEAM1") =>
+      (fn [result]
+        (= (-> result :id) (-> @state :slack-token :id)))
+
+      ; upsert a new token for this user & team
+      (db/upsert-slack-token
+        (:conn @test-db)
+        {:nonce "2"
+         :iv "2"
+         :type :slack-token-type/user
+         :slack-id "USER1"
+         :slack-team-id "TEAM1"
+         :scope "read,write,smell"
+         :encrypted "yyy"}) =>
+      (fn [result]
+        (swap! state #(assoc % :new-token-id (:id result)))
+        (= (:id result) (-> @state :slack-token :id)))
+
+      ; there's only one in the db
+      (db/get-all-slack-tokens-count (:conn @test-db)) =>
+      (fn [result]
+        (= (:count result) 1)))
+
 
     (fact
       "we can truncate the db"
-      (db/get-tokens-for-user (:conn @test-db) "bean") =>
+      (db/get-tokens-for-user (:conn @test-db) "USER1" "TEAM1") =>
         (fn [result]
           (empty? result)))))

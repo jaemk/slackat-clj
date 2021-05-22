@@ -15,6 +15,8 @@
                  [manifold "0.1.9-alpha4"]
                  [byte-streams "0.2.5-alpha2"]
                  [byte-transforms "0.1.5-alpha1"]
+                 [clojure.java-time "0.3.2"]
+                 [org.clojure/core.cache "1.0.207"]
                  [ring/ring-core "1.9.3"]
                  [compojure "1.6.2"]
                  [buddy/buddy-core "1.10.1"]

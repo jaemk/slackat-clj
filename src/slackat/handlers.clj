@@ -1,47 +1,90 @@
 (ns slackat.handlers
-  (:import [java.io File]
-           [io.netty.buffer PooledSlicedByteBuf])
   (:require [taoensso.timbre :as t]
             [manifold.deferred :as d]
             [manifold.stream :as s]
             [manifold.time :as dtime]
             [byte-streams :as bs]
             [aleph.http :as http]
+            [java-time :as jt]
             [clojure.java.jdbc :as j]
             [clojure.java.io :as io]
             [clojure.core.async :as a]
+            [clojure.core.cache :as cache]
             [cheshire.core :as json]
             [slackat.execution :as ex]
             [slackat.database.core :as db]
+            [slackat.crypto :as cr]
             [slackat.utils :as u :refer [->resp ->text ->json ->redirect]]
             [slackat.slack :as slack]
             [slackat.config :as config]))
 
 
 (defn index [_]
-  (->text "hello"))
+  (->redirect "/login"))
+
+;; 2m cache ttl
+(defonce state-tokens (atom (cache/ttl-cache-factory {} :ttl 120000)))
+
+(defn new-state-token []
+  (-> (cr/rand-bytes 32)
+      buddy.core.codecs/bytes->hex
+      ((fn [hex]
+         (swap! state-tokens (fn [s]
+                               (cache/evict s hex)
+                               (cache/through-cache s hex (constantly nil))))
+         hex))))
+
+(defn valid-state-token? [token]
+  (let [valid (atom false)]
+    (swap!
+      state-tokens
+      (fn [s]
+        (swap!
+          valid
+          (fn [_]
+            (and
+              (cache/has? s token))))
+        (cache/evict s token)))
+    @valid))
+
 
 
 (defn login
   "redirect to slack to login"
   [req]
-  (-> (slack/build-redirect "token")
+  (-> (slack/build-redirect (new-state-token))
       ->redirect))
 
+(defn -upsert-user [resp]
+  {})
 
 (defn login-slack
   "redirected here from slack's authorization"
   [req]
   (let [{:strs [code state]} (req :params)]
-    (d/chain
-      (slack/exchange-access code)
-      (fn [resp] (t/info "access details" resp))
-      (fn [_] (->json {:ok :ok})))))
+    (if (not (valid-state-token? state))
+      (->text "Login redirect token expired. Please trying logging in again")
+      (d/chain
+        (slack/exchange-access code)
+        (fn [resp] (clojure.pprint/pprint resp))
+        (fn [resp] -upsert-user)
+        (fn [_] (->json {:ok :ok}))))))
 
+
+(defn parse-time [s]
+  (u/utc-now))
+
+
+(defn parse-cmd [command]
+  {})
 
 (defn exec-cmd [command text]
-  {:result (format "you said, \"%s\"" text)
-   :error  nil})
+  (let [opts (parse-cmd text)]
+    (if-let [err (opts :errors)]
+      {:result nil
+       :error err}
+      {:result (format "you said, \"%s\"" text)
+       :error  nil})))
 
 
 (defn slack-command
@@ -49,6 +92,7 @@
   [req]
   (let [req (u/parse-form-body req)
         body (:body req)
+        _ (clojure.pprint/pprint body)
         {:strs [command text user_id channel_id response_url]} body]
     (t/info (json/encode {:pretty true}) {:body body})
     (t/info "slash command"
@@ -58,16 +102,7 @@
     (a/go
       (let [_ (a/<! (a/timeout 100))
             {res :result} (exec-cmd command text)]
-        @(d/chain (http/post
-                    response_url
-                    {:headers {"content-type" "application/json; charset=utf-8"}
-                     :body    (json/encode
-                                {:replace_original true
-                                 :delete_original  true
-                                 :text             res
-                                 :response_type    "ephemeral"})})
-                  u/parse-form-body
-                  clojure.pprint/pprint)))
+        @(slack/slash-respond response_url res)))
     (->resp)))
 
 

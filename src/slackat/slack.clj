@@ -55,5 +55,42 @@
 
 
 (defn schedule-message
-  "https://api.slack.com/messaging/scheduling#listing"
-  [])
+  ;; "https://api.slack.com/messaging/scheduling#scheduling"
+  [{:keys [channel token text post-at]}]
+  (d/chain
+    (http/post
+      "https://slack.com/api/chat.scheduleMessage"
+      {:headers {"authorization" (str "Bearer " token)
+                 "content-type"  "application/json; charset=utf-8"}
+       :body    (json/encode
+                  {:channel channel
+                   :text    text
+                   :post_at (u/dt->unix-seconds post-at)})})
+    u/parse-json-body))
+
+
+(defn list-messages
+  ;; "https://api.slack.com/messaging/scheduling#listing"
+  [token {:keys [after-ts before-ts in-channel]}]
+  (d/chain
+    (http/post
+      ""
+      {:headers {"authorization" (str "Bearer " token)
+                 "content-type"  "application/json; charset=utf-8"}
+       :body    (json/encode
+                  {:channel in-channel
+                   :oldest  (some-> after-ts u/dt->unix-seconds)
+                   :latest  (some-> before-ts u/dt->unix-seconds)})})))
+
+
+
+
+(defn slash-respond [response-url text]
+  (d/chain
+    (http/post
+      response-url
+      {:headers {"content-type" "application/json; charset=utf-8"}
+       :body    (json/encode
+                  {:text          text
+                   :response_type "ephemeral"})})
+    u/parse-form-body))

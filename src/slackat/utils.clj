@@ -2,6 +2,7 @@
   (:require [taoensso.timbre :as t]
             [cheshire.core :as json]
             [byte-streams :as bs]
+            [java-time :as jt]
             [clojure.java.io :as io]
             [clojure.string :as string])
   (:import [java.util UUID]
@@ -17,9 +18,9 @@
   (let [kwargs (apply hash-map kwargs)
         ct (or (:ct kwargs) "text/plain")
         kwargs (dissoc kwargs :ct)
-        default {:status 200
+        default {:status  200
                  :headers {"content-type" ct}
-                 :body ""}]
+                 :body    ""}]
     (merge default kwargs)))
 
 
@@ -27,23 +28,23 @@
   (let [kwargs (apply hash-map kwargs)
         s (if (instance? String s) s (str s))]
     (merge
-      {:status 200
+      {:status  200
        :headers {"content-type" "text/plain"}
-       :body s}
+       :body    s}
       kwargs)))
 
 
 (defn ->json [mapping & kwargs]
   (let [kwargs (apply hash-map kwargs)]
     (merge
-      {:status 200
+      {:status  200
        :headers {"content-type" "application/json"}
-       :body (json/encode mapping)}
+       :body    (json/encode mapping)}
       kwargs)))
 
 
 (defn ->redirect [to]
-  {:status 307
+  {:status  307
    :headers {"location" to}})
 
 
@@ -65,30 +66,30 @@
 
 ;; ---- error builders
 (defn ex-invalid-request!
-  [& {:keys [e-msg resp-msg] :or {e-msg "invalid request"
+  [& {:keys [e-msg resp-msg] :or {e-msg    "invalid request"
                                   resp-msg "invalid request"}}]
   (throw
     (ex-info e-msg
              {:type :invalid-request
-              :msg e-msg
+              :msg  e-msg
               :resp (->resp :status 400 :body resp-msg)})))
 
 (defn ex-unauthorized!
-  [& {:keys [e-msg resp-msg] :or {e-msg "unauthorized"
+  [& {:keys [e-msg resp-msg] :or {e-msg    "unauthorized"
                                   resp-msg "unauthorized"}}]
   (throw
     (ex-info e-msg
              {:type :invalid-request
-              :msg e-msg
+              :msg  e-msg
               :resp (->resp :status 401 :body resp-msg)})))
 
 (defn ex-not-found!
-  [& {:keys [e-msg resp-msg] :or {e-msg "item not found"
+  [& {:keys [e-msg resp-msg] :or {e-msg    "item not found"
                                   resp-msg "item not found"}}]
   (throw
     (ex-info e-msg
              {:type :invalid-request
-              :msg e-msg
+              :msg  e-msg
               :resp (->resp :status 404 :body resp-msg)})))
 
 (defn ex-does-not-exist! [record-type]
@@ -96,25 +97,39 @@
     (throw
       (ex-info
         msg
-        {:type :does-not-exist
+        {:type  :does-not-exist
          :cause record-type
-         :msg msg
-         :resp (->resp :status 404 :body "item not found")}))))
+         :msg   msg
+         :resp  (->resp :status 404 :body "item not found")}))))
 
 (defn ex-error!
   [e-msg & {:keys [resp-msg cause] :or {resp-msg "something went wrong"
-                                        cause nil}}]
+                                        cause    nil}}]
   (throw
-   (ex-info
-     e-msg
-     {:type :internal-error
-      :cause cause
-      :msg e-msg
-      :resp (->resp :status 500 :body resp-msg)})))
+    (ex-info
+      e-msg
+      {:type  :internal-error
+       :cause cause
+       :msg   e-msg
+       :resp  (->resp :status 500 :body resp-msg)})))
+
+
+;; ---- time
+(defn utc-now []
+  (jt/zoned-date-time (jt/instant) "UTC"))
+
+
+(defn dt->unix-seconds [dt]
+  (-> dt
+      jt/to-millis-from-epoch
+      (/ 1000)
+      int))
 
 
 ;; ---- general
-(defn spy [arg] (clojure.pprint/pprint arg) arg)
+(defn spy [arg]
+  (pr "SPY: ")
+  (clojure.pprint/pprint arg) arg)
 
 
 (defn uuid []
@@ -130,9 +145,9 @@
     (try
       (-> (Hex/decodeHex uuid-str)
           ((fn [^"[B" buf]
-            (if (not (= 16 (alength buf)))
-              (throw (Exception. "invalid uuid"))
-              buf)))
+             (if (not (= 16 (alength buf)))
+               (throw (Exception. "invalid uuid"))
+               buf)))
           (ByteBuffer/wrap)
           ((fn [^ByteBuffer buf]
              (UUID. (.getLong buf) (.getLong buf)))))
