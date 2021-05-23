@@ -18,27 +18,39 @@
   (let [kwargs (apply hash-map kwargs)
         ct (or (:ct kwargs) "text/plain")
         kwargs (dissoc kwargs :ct)
+        headers (or (get kwargs :headers) {})
+        kwargs (dissoc kwargs :headers)
+        default-headers {"content-type" ct}
+        headers (merge default-headers headers)
         default {:status  200
-                 :headers {"content-type" ct}
+                 :headers headers
                  :body    ""}]
     (merge default kwargs)))
 
 
 (defn ->text [s & kwargs]
   (let [kwargs (apply hash-map kwargs)
-        s (if (instance? String s) s (str s))]
+        s (if (instance? String s) s (str s))
+        headers (or (get kwargs :headers) {})
+        kwargs (dissoc kwargs :headers)
+        default-headers {"content-type" "text/plain"}
+        headers (merge default-headers headers)]
     (merge
       {:status  200
-       :headers {"content-type" "text/plain"}
+       :headers headers
        :body    s}
       kwargs)))
 
 
 (defn ->json [mapping & kwargs]
-  (let [kwargs (apply hash-map kwargs)]
+  (let [kwargs (apply hash-map kwargs)
+        headers (or (get kwargs :headers) {})
+        kwargs (dissoc kwargs :headers)
+        default-headers {"content-type" "application/json"}
+        headers (merge default-headers headers)]
     (merge
       {:status  200
-       :headers {"content-type" "application/json"}
+       :headers headers
        :body    (json/encode mapping)}
       kwargs)))
 
@@ -114,6 +126,30 @@
        :resp  (->resp :status 500 :body resp-msg)})))
 
 
+;; ---- macros
+(defmacro get-some->
+  "Build a 'get' chain:
+      (get-some-> {\\\"a\\\" {\\\"b\\\" {:c 1}}}
+                  \"a\"
+                  \"b\"
+                  :c)
+  Becomes:
+      (some-> {\"a\" {\"b\" {:c 1}}}
+              (get \"a\")
+              (get \"b\")
+              (get :c)
+  "
+  [expr & forms]
+  (let [g (gensym)
+        steps (map (fn [step] `(if (nil? ~g) nil (get ~g ~step)))
+                   forms)]
+    `(let [~g ~expr
+           ~@(interleave (repeat g) (butlast steps))]
+       ~(if (empty? steps)
+          g
+          (last steps)))))
+
+
 ;; ---- time
 (defn utc-now []
   (jt/zoned-date-time (jt/instant) "UTC"))
@@ -127,9 +163,14 @@
 
 
 ;; ---- general
-(defn spy [arg]
-  (pr "SPY: ")
-  (clojure.pprint/pprint arg) arg)
+(defn spy
+  ([arg] (spy arg nil))
+  ([arg desc]
+   (let [desc (if (nil? desc) "" (str ": " desc))]
+     (println (format "=============== [SPY%s] ===============" desc))
+     (clojure.pprint/pprint arg)
+     (println "=====================================")
+     arg)))
 
 
 (defn uuid []

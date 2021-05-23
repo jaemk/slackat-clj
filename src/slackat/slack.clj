@@ -27,7 +27,8 @@
        :form-params {"client_id"     (config/v :slack-client-id)
                      "client_secret" (config/v :slack-client-secret)
                      "code"          code}})
-    u/parse-json-body))
+    u/parse-json-body
+    :body))
 
 (defn post-message
   "https://api.slack.com/methods/chat.postMessage"

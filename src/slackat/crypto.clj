@@ -46,14 +46,14 @@
 
 
 (defn encrypt
-  ([s]
+  ([text]
    (let [salt (new-salt)]
-     (encrypt s (config/v :encryption-key) salt)))
-  ([clear-text password salt]
+     (encrypt text (config/v :encryption-key) salt)))
+  ([text password salt]
    (let [initialization-vector (rand-bytes 16)]
      {:data (codecs/bytes->hex
               (crypto/encrypt
-                (codecs/to-bytes clear-text)
+                (codecs/to-bytes text)
                 (hash-password password salt 64)
                 initialization-vector
                 {:algorithm :aes256-cbc-hmac-sha512}))

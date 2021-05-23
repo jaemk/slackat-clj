@@ -24,7 +24,7 @@
       ; create and save a token
       (db/upsert-slack-token
         (:conn @test-db)
-        {:nonce "1"
+        {:salt "1"
          :iv "1"
          :type :slack-token-type/user
          :slack-id "USER1"
@@ -49,7 +49,7 @@
       ; upsert a new token for this user & team
       (db/upsert-slack-token
         (:conn @test-db)
-        {:nonce "2"
+        {:salt "2"
          :iv "2"
          :type :slack-token-type/user
          :slack-id "USER1"

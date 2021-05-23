@@ -160,34 +160,72 @@
                 (first-or-err first-err-key))]
     (j/query conn
              (-> stmt
-                 sql/format
-                 u/spy)
+                 sql/format)
              {:row-fn        row-fn
               :result-set-fn rs-fn})))
 
 
 
 ; ----- database queries ------
-(defn upsert-slack-token [conn {nonce         :nonce
-                                iv            :iv
-                                type          :type
-                                slack-id      :slack-id
-                                slack-team-id :slack-team-id
-                                scope         :scope
-                                encrypted     :encrypted}]
+(defn upsert-user
+  "Insert a new or existing user, called after slack login redirect"
+  [conn {slack-id :slack-id
+         slack-team-id :slack-team-id}]
+  (-> (insert!
+        conn
+        (-> (h/insert-into :slackat.users)
+            (h/values [{:slack-id      slack-id
+                        :slack-team-id slack-team-id}])
+            (pg/upsert (-> (pg/on-conflict :slack-id :slack-team-id)
+                           (pg/do-update-set! [:modified (sql/call :now)])))))
+      ((fn [user] (assoc user :new? (= (:created user) (:modified user)))))))
+
+
+;; todo: expire old auth tokens in a scheduled job
+(defn insert-user-auth
+  "Save a user's auth token signature"
+  [conn {user-id :user-id
+         signature :signature}]
+  (-> (insert!
+        conn
+        (-> (h/insert-into :slackat.auth_tokens)
+            (h/values [{:user-id user-id
+                        :signature signature}])))))
+
+
+(defn get-user-for-auth
+  "Load a user by their auth token signature"
+  [conn signature]
+  (query
+    conn
+    ;; todo: join on users
+    (-> (h/select :*)
+        (h/from :slackat.auth_tokens)
+        (h/where [:= :signature signature]))))
+
+
+(defn upsert-slack-token
+  "Save or overwrite a slack token for a given (type:user, user-id, team-id)
+  or (type:bot, bot-id, team-id)"
+  [conn {iv            :iv
+         salt          :salt
+         type          :type
+         slack-id      :slack-id
+         slack-team-id :slack-team-id
+         scope         :scope
+         encrypted     :encrypted}]
   (insert!
    conn
    (-> (h/insert-into :slackat.slack_tokens)
-       (h/values [{
-                   :nonce nonce
-                   :iv iv
+       (h/values [{:iv iv
+                   :salt salt
                    :type type
                    :slack_id slack-id
                    :slack_team_id slack-team-id
                    :scope scope
                    :encrypted encrypted}])
        (pg/upsert (-> (pg/on-conflict :type :slack-id :slack-team-id)
-                      (pg/do-update-set! [:modified (sql/call :now)] [:nonce nonce] [:iv iv] [:encrypted encrypted] [:scope scope]))))))
+                      (pg/do-update-set! [:modified (sql/call :now)] [:iv iv] [:salt salt] [:encrypted encrypted] [:scope scope]))))))
 
 (defn get-all-slack-tokens-count [conn]
   (query
