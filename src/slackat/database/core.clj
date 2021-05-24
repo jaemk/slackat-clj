@@ -152,11 +152,11 @@
            {:result-set-fn #(pluck % :empty->nil true)}))
 
 
-(defn query [conn stmt & {:keys [first-err-key row-fn]
+(defn query [conn stmt & {:keys [first-err-key row-fn result-set-fn]
                           :or   {first-err-key  nil
                                  row-fn identity}}]
   (let [rs-fn (if (nil? first-err-key)
-                nil
+                result-set-fn
                 (first-or-err first-err-key))]
     (j/query conn
              (-> stmt
@@ -201,7 +201,9 @@
     ;; todo: join on users
     (-> (h/select :*)
         (h/from :slackat.auth_tokens)
-        (h/where [:= :signature signature]))))
+        (h/where [:= :signature signature]))
+    :result-set-fn #(pluck % :empty->nil true)))
+
 
 
 (defn upsert-slack-token
