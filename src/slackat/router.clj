@@ -7,6 +7,7 @@
 
 (defn load-routes []
   (routes
+    ;; todo: make a cute favicon
     (ANY "/" [] h/index)
     (ANY "/status" [] (u/->json {:status :ok
                                  :version (config/v :app-version)}))
