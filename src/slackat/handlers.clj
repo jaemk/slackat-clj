@@ -122,11 +122,11 @@
 
 
 (defn -build-cookie [auth-token]
-  ;; todo: update Domain= once we have a real domain
   (format
-    "auth_token=%s; Secure; HttpOnly; Max-age=%s; Path=/; Domain=0b190a9fe1cf.ngrok.io; SameSite=Lax"
+    "auth_token=%s; Secure; HttpOnly; Max-age=%s; Path=/; Domain=%s; SameSite=Lax"
     auth-token
-    (* 60 24 30)))
+    (* 60 24 30)
+    (config/v :domain)))
 
 
 (defn login-slack

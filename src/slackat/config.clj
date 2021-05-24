@@ -51,6 +51,9 @@
      :keep-alive-client-timeout-ms
                   (env "KEEP_ALIVE_CLIENT_TIMEOUT_MS" :default 5000 :parse u/parse-int)
 
+     :domain      (env "SLACKAT_DOMAIN" :parse (partial not-nil "SLACKAT_DOMAIN is a required env var"))
+     :host        (env "SLACKAT_HOST" :parse (partial not-nil "SLACKAT_HOST is a required env var"))
+
      :slack-client-id
                   (env "SLACK_CLIENT_ID")
      :slack-client-secret
