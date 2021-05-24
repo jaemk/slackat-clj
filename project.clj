@@ -25,7 +25,6 @@
                  [org.postgresql/postgresql "42.2.20.jre7"]
                  [honeysql "1.0.461"]
                  [nilenso/honeysql-postgres "0.4.112"]
-                 [commons-codec/commons-codec "1.15"]
                  [cheshire "5.10.0"]]
   :main ^:skip-aot slackat.core
   :target-path "target/%s"

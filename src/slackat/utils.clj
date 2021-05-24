@@ -4,13 +4,19 @@
             [byte-streams :as bs]
             [java-time :as jt]
             [clojure.java.io :as io]
-            [clojure.string :as string])
+            [clojure.string :as string]
+            [buddy.core.codecs :as codecs])
   (:import [java.util UUID]
-           [java.nio ByteBuffer]
-           [org.apache.commons.codec.binary Hex]))
+           [java.nio ByteBuffer]))
 
 
 ;; ---- response builders
+(defn- extract-header-kwargs [kwargs default-headers]
+  (let [headers (or (get kwargs :headers) {})
+        kwargs (dissoc kwargs :headers)
+        headers (merge default-headers headers)]
+    [kwargs headers]))
+
 (defn ->resp
   "Construct a response map
   Any kwargs provided are merged into a default 200 response"
@@ -18,46 +24,39 @@
   (let [kwargs (apply hash-map kwargs)
         ct (or (:ct kwargs) "text/plain")
         kwargs (dissoc kwargs :ct)
-        headers (or (get kwargs :headers) {})
-        kwargs (dissoc kwargs :headers)
-        default-headers {"content-type" ct}
-        headers (merge default-headers headers)
+
+        [kwargs headers] (extract-header-kwargs kwargs {"content-type" ct})
         default {:status  200
                  :headers headers
                  :body    ""}]
     (merge default kwargs)))
 
-
 (defn ->text [s & kwargs]
   (let [kwargs (apply hash-map kwargs)
         s (if (instance? String s) s (str s))
-        headers (or (get kwargs :headers) {})
-        kwargs (dissoc kwargs :headers)
-        default-headers {"content-type" "text/plain"}
-        headers (merge default-headers headers)]
+        [kwargs headers] (extract-header-kwargs kwargs {"content-type" "text/plain"})]
     (merge
       {:status  200
        :headers headers
        :body    s}
       kwargs)))
 
-
 (defn ->json [mapping & kwargs]
   (let [kwargs (apply hash-map kwargs)
-        headers (or (get kwargs :headers) {})
-        kwargs (dissoc kwargs :headers)
-        default-headers {"content-type" "application/json"}
-        headers (merge default-headers headers)]
+        [kwargs headers] (extract-header-kwargs kwargs {"content-type" "application/json"})]
     (merge
       {:status  200
        :headers headers
        :body    (json/encode mapping)}
       kwargs)))
 
-
-(defn ->redirect [to]
-  {:status  307
-   :headers {"location" to}})
+(defn ->redirect [to & kwargs]
+  (let [kwargs (apply hash-map kwargs)
+        [kwargs headers] (extract-header-kwargs kwargs {"location" to})]
+    (merge
+      {:status  307
+       :headers headers}
+      kwargs)))
 
 
 ;; ---- http (server & client) utils
@@ -173,18 +172,39 @@
      arg)))
 
 
+;; -- base64 map serialization
+(defn b64-str->bytes
+  "convert a base64 string to decoded bytes"
+  [^String s]
+  (buddy.core.codecs/b64u->bytes (.getBytes s)))
+
+(defn map->b64-str
+  "encode a json-able map to a url-safe base64 string"
+  [data]
+  (-> (json/encode data)
+      codecs/str->bytes
+      codecs/bytes->b64u
+      codecs/bytes->str))
+
+(defn b64-str->map
+  "decode a url-safe base64 string to a map"
+  [^String s]
+  (-> (b64-str->bytes s)
+      codecs/bytes->str
+      json/decode))
+
+
+;; -- uuid
 (defn uuid []
   (UUID/randomUUID))
-
 
 (defn format-uuid [^UUID uuid]
   (-> uuid .toString (.replace "-" "")))
 
-
 (defn parse-uuid [^String uuid-str]
   (when (some? uuid-str)
     (try
-      (-> (Hex/decodeHex uuid-str)
+      (-> (codecs/hex->bytes uuid-str)
           ((fn [^"[B" buf]
              (if (not (= 16 (alength buf)))
                (throw (Exception. "invalid uuid"))
