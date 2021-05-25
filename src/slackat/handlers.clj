@@ -83,7 +83,7 @@
   ([state-token] (format-state-str state-token {}))
   ([state-token metadata]
    (let [metadata (or metadata {})
-         meta-str (u/map->b64-str metadata)]
+         meta-str (-> metadata u/map->b64-str cr/encrypt u/map->b64-str)]
      (format "%s.%s" state-token meta-str))))
 
 (defn parse-state-str
@@ -93,7 +93,11 @@
   (let [[state-token metadata] (str/split state-str #"\.")]
     (if (or (nil? state-token) (nil? metadata))
       (u/ex-error! (format "Found invalid state token in slack login redirect: %s" state-str))
-      [state-token (u/b64-str->map metadata)])))
+      [state-token (-> metadata
+                       u/b64-str->map
+                       clojure.walk/keywordize-keys
+                       cr/decrypt
+                       u/b64-str->map)])))
 
 
 (defn login
@@ -131,37 +135,39 @@
   (let [sla slack-auth-info
         bot-id (sla "bot_user_id")
         bot-token (sla "access_token")
-        bot-scope (sla "scope")
+        bot-scope (some-> (sla "scope") u/trim-to-nil (str/split #","))
         team-id (u/get-some-> sla "team" "id")
         user-id (u/get-some-> sla "authed_user" "id")
         user-token (u/get-some-> sla "authed_user" "access_token")
-        user-scope (u/get-some-> sla "authed_user" "scope")
+        user-scope (some-> (u/get-some-> sla "authed_user" "scope")
+                           u/trim-to-nil
+                           (str/split #","))
 
         bot-token-enc (cr/encrypt bot-token)
         user-token-enc (cr/encrypt user-token)]
     (j/with-db-transaction
       [tr (db/conn)]
-      (let [user (db/upsert-user tr {:slack-id user-id
+      (let [user (db/upsert-user tr {:slack-id      user-id
                                      :slack-team-id team-id})
             auth-token (buddy.core.codecs/bytes->hex (cr/rand-bytes 32))
-            _ (db/insert-user-auth tr {:user-id (:id user)
+            _ (db/insert-user-auth tr {:user-id   (:id user)
                                        :signature (cr/sign auth-token)})
-            _ (db/upsert-slack-token tr {:iv (:iv bot-token-enc)
-                                         :salt (:salt bot-token-enc)
-                                         :encrypted (:data bot-token-enc)
-                                         :type :slack_token_type/bot
-                                         :slack-id bot-id
+            _ (db/upsert-slack-token tr {:iv            (:iv bot-token-enc)
+                                         :salt          (:salt bot-token-enc)
+                                         :encrypted     (:data bot-token-enc)
+                                         :type          :slack_token_type/bot
+                                         :slack-id      bot-id
                                          :slack-team-id team-id
-                                         :scope bot-scope})
-            _ (db/upsert-slack-token tr {:iv (:iv user-token-enc)
-                                         :salt (:salt user-token-enc)
-                                         :encrypted (:data user-token-enc)
-                                         :type :slack_token_type/user
-                                         :slack-id user-id
+                                         :scope         bot-scope})
+            _ (db/upsert-slack-token tr {:iv            (:iv user-token-enc)
+                                         :salt          (:salt user-token-enc)
+                                         :encrypted     (:data user-token-enc)
+                                         :type          :slack_token_type/user
+                                         :slack-id      user-id
                                          :slack-team-id team-id
-                                         :scope user-scope})]
-          ;(u/spy user :after-login)
-          {:auth-token auth-token}))))
+                                         :scope         user-scope})]
+        ;(u/spy user :after-login)
+        {:auth-token auth-token}))))
 
 
 (defn build-cookie [auth-token]

@@ -172,6 +172,12 @@
      arg)))
 
 
+(defn trim-to-nil [s]
+  (some-> s
+          string/trim
+          (#(if (empty? %) nil %))))
+
+
 ;; -- base64 map serialization
 (defn b64-str->bytes
   "convert a base64 string to decoded bytes"

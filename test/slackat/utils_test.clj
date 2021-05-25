@@ -17,9 +17,14 @@
     "we can roundtrip uuids"
     (u/parse-uuid (u/format-uuid uuid)) => uuid)
   (fact
+    "trim to none"
+    (u/trim-to-nil nil) => nil
+    (u/trim-to-nil "    ") => nil
+    (u/trim-to-nil "  a   ") => "a"
+    (u/trim-to-nil "") => nil)
+  (fact
     "get some thread macro works"
     (u/get-some-> money-map "redirect") => (get money-map "redirect")
     (u/get-some-> money-map "money" "mine") => 200
     (u/get-some-> money-map :a :b :c) => nil
     (u/get-some-> money-map "money" :mine) => nil))
-
