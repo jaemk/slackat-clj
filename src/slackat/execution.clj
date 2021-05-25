@@ -4,7 +4,6 @@
             [slackat.config :as config]))
 
 (def pool (fixed-thread-executor (config/v :num-threads)))
-(def single-thread (fixed-thread-executor 1))
 
 (def cp (connection-pool
           {:connections-per-host (config/v :max-client-connections-per-host)
