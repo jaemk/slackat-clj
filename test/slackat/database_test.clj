@@ -39,7 +39,7 @@
           (= (-> result :slack_team_id) "TEAM1")))
 
       ; lookup by user & team
-      (db/get-token-for-user
+      (db/get-slack-token-for-user
         (:conn @test-db)
         "USER1"
         "TEAM1") =>
@@ -68,6 +68,6 @@
 
     (fact
       "we can truncate the db"
-      (db/get-tokens-for-user (:conn @test-db) "USER1" "TEAM1") =>
+      (db/get-slack-tokens-for-user (:conn @test-db) "USER1" "TEAM1") =>
         (fn [result]
           (empty? result)))))

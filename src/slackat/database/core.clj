@@ -238,7 +238,7 @@
     :first-err-key :db-get/all-slack-tokens-count))
 
 
-(defn get-token-for-user [conn slack-user-id slack-team-id]
+(defn get-slack-token-for-user [conn slack-user-id slack-team-id]
   (t/info "loading user token" {:user-id slack-user-id :team-id slack-team-id})
   (query conn
          (-> (h/select :*)
@@ -247,9 +247,9 @@
                       [:= :slack_team_id slack-team-id]
                       [:= :type :slack-token-type/user])
              (h/order-by [:created :desc]))
-         :first-err-key :db-get/token))
+         :result-set-fn #(pluck % :empty->nil true)))
 
-(defn get-tokens-for-user [conn slack-user-id slack-team-id]
+(defn get-slack-tokens-for-user [conn slack-user-id slack-team-id]
   (t/info "loading user token" {:user-id slack-user-id :team-id slack-team-id})
   (query conn
          (-> (h/select :*)
