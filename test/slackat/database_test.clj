@@ -24,13 +24,13 @@
       ; create and save a token
       (db/upsert-slack-token
         (:conn @test-db)
-        {:salt "1"
-         :iv "1"
-         :type :slack-token-type/user
-         :slack-id "USER1"
+        {:salt          "1"
+         :iv            "1"
+         :type          :slack-token-type/user
+         :slack-id      "USER1"
          :slack-team-id "TEAM1"
-         :scope "read,write"
-         :encrypted "xxx"}) =>
+         :scope         ["read" "write"]
+         :encrypted     "xxx"}) =>
       (fn [result]
         (swap! state #(assoc % :slack-token result)) ; save for later
         (and
@@ -49,13 +49,13 @@
       ; upsert a new token for this user & team
       (db/upsert-slack-token
         (:conn @test-db)
-        {:salt "2"
-         :iv "2"
-         :type :slack-token-type/user
-         :slack-id "USER1"
+        {:salt          "2"
+         :iv            "2"
+         :type          :slack-token-type/user
+         :slack-id      "USER1"
          :slack-team-id "TEAM1"
-         :scope "read,write,smell"
-         :encrypted "yyy"}) =>
+         :scope         ["read" "write" "smell"]
+         :encrypted     "yyy"}) =>
       (fn [result]
         (swap! state #(assoc % :new-token-id (:id result)))
         (= (:id result) (-> @state :slack-token :id)))

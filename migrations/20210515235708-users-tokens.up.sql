@@ -30,7 +30,7 @@ create table slackat.slack_tokens (
     type slack_token_type not null,
     slack_id text not null,
     slack_team_id text not null,
-    scope text not null,
+    scope text[] not null,
     encrypted text not null
 );
 --;;

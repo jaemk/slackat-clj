@@ -216,18 +216,19 @@
          slack-team-id :slack-team-id
          scope         :scope
          encrypted     :encrypted}]
-  (insert!
-   conn
-   (-> (h/insert-into :slackat.slack_tokens)
-       (h/values [{:iv iv
-                   :salt salt
-                   :type type
-                   :slack_id slack-id
-                   :slack_team_id slack-team-id
-                   :scope scope
-                   :encrypted encrypted}])
-       (pg/upsert (-> (pg/on-conflict :type :slack-id :slack-team-id)
-                      (pg/do-update-set! [:modified (sql/call :now)] [:iv iv] [:salt salt] [:encrypted encrypted] [:scope scope]))))))
+  (let [scope (into-array scope)]
+    (insert!
+      conn
+      (-> (h/insert-into :slackat.slack_tokens)
+          (h/values [{:iv            iv
+                      :salt          salt
+                      :type          type
+                      :slack_id      slack-id
+                      :slack_team_id slack-team-id
+                      :scope         scope
+                      :encrypted     encrypted}])
+          (pg/upsert (-> (pg/on-conflict :type :slack-id :slack-team-id)
+                         (pg/do-update-set! [:modified (sql/call :now)] [:iv iv] [:salt salt] [:encrypted encrypted] [:scope scope])))))))
 
 (defn get-all-slack-tokens-count [conn]
   (query
