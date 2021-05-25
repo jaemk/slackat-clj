@@ -17,6 +17,9 @@
   (:import (java.net InetSocketAddress)))
 
 
+(set! *warn-on-reflection* true)
+
+
 ;; Make sure compojure passes through all
 ;; deferred objects to play nice with aleph
 (extend-protocol Renderable
