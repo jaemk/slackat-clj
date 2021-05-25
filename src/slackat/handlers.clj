@@ -208,67 +208,65 @@
                 (->text "Welcome!" :headers headers)))))))))
 
 
-(defn parse-cmd [command]
-  {})
+(def login-url (format "%s/login" (config/v :host)))
 
-(defn exec-cmd [command text]
-  (let [opts (parse-cmd text)]
-    (if-let [err (opts :errors)]
-      {:result nil
-       :error err}
-      {:result (format "you said, \"%s\"" text)
-       :error  nil})))
 
+(defn process-cmd' [text]
+  (let [text text
+        post-at (jt/plus (u/utc-now) (jt/seconds 30))]
+    [{:text    text
+      :post-at post-at}
+     (format "Scheduled \"%s\" to be sent at %s" text post-at)]))
+
+(defn process-cmd [params]
+  (let [{:strs [command text user_id team_id channel_id response_url]} params
+        res {:result    nil
+             :api-token nil
+             :channel   channel_id
+             :response  nil
+             :url       response_url}
+        token (db/get-slack-token-for-user (db/conn) user_id team_id)]
+    (if (nil? token)
+      (let [response (format "Woops, looks like you need to login at %s" login-url)]
+        (assoc res
+          :response response))
+      (let [api-token (cr/decrypt {:data (:encrypted token)
+                                   :iv   (:iv token)
+                                   :salt (:salt token)})
+            [result response] (process-cmd' text)]
+        (assoc res
+          :api-token api-token
+          :result result
+          :response response)))))
+
+
+(defn process-cmd-send-result [params]
+  (->
+    (d/chain (future (process-cmd params))
+             (fn [processed]
+               (let [{:keys [result api-token channel]} processed]
+                 (do
+                   (when-let [{:keys [text post-at]} result]
+                     (d/chain (slack/schedule-message {:channel channel
+                                                       :token   api-token
+                                                       :text    text
+                                                       :post-at post-at})))
+                   (d/success-deferred processed))))
+             (fn [{:keys [response url]}]
+               (slack/slash-respond url response)))
+    (d/catch
+      Exception
+      (fn [^Exception e]
+        (t/error (format "error in command processor: %s" e) {:user-id (params :user_id)})))))
 
 (defn slack-command
   "slash cmd webhook"
   [req]
   (let [req (u/parse-form-body req)
         body (:body req)
-        _ (clojure.pprint/pprint body)
-        {:strs [command text user_id channel_id response_url]} body]
-    ;; todo: look up the user to tell them if we need them to login
-    ;;       so we can get a slack-user-token that we can use to post
-    ;;       on their behalf
-    (t/info (json/encode {:pretty true}) {:body body})
-    (t/info "slash command"
-            {:command      command :text text
-             :user-id      user_id :channel-id channel_id
-             :response-url response_url})
-    (a/go
-      (let [_ (a/<! (a/timeout 100))
-            {res :result} (exec-cmd command text)]
-        @(slack/slash-respond response_url res)))
+        _ (u/spy body :slack-cmd)]
+    (manifold.time/in
+      100
+      (fn []
+        (process-cmd-send-result body)))
     (->resp)))
-
-
-;; -- testing
-(defn make-requests [n uri]
-  (-> (fn [i]
-        (d/chain
-          (http/get uri {:pool ex/cp
-                         :body (json/encode {:count i})})
-          :body
-          bs/to-string
-          #(json/decode % true)
-          :data
-          #(json/decode % true)
-          :count))
-      (map (range n))))
-
-(defn flob [req]
-  (let [start (:aleph/request-arrived req)
-        -count (-> req :params :count u/parse-int)]
-    (->
-      (d/chain
-        (apply d/zip (make-requests -count "https://httpbin.org/delay/2"))
-        (fn [resps] (->json {:elap  (-> (System/nanoTime)
-                                        (- start)
-                                        (/ 1000000.))
-                             :resps (clojure.string/join "|" resps)})))
-      (d/catch Exception #(t/error "no luck.." :exc-info %)))))
-
-
-(defn delay-seconds [req]
-  (let [delay-ms (-> req :params :seconds u/parse-int (* 1000))]
-    (dtime/in delay-ms #(->json {:msg "yo"}))))
