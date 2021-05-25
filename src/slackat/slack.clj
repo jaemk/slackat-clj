@@ -45,7 +45,8 @@
   (d/chain
     (http/post
       url
-      {:headers {"authorization" (str "Bearer " token)
+      {:pool    ex/cp
+       :headers {"authorization" (str "Bearer " token)
                  "content-type"  "application/json; charset=utf-8"}
        :body    (json/encode
                   {:channel channel
@@ -61,7 +62,8 @@
   (d/chain
     (http/post
       "https://slack.com/api/chat.scheduleMessage"
-      {:headers {"authorization" (str "Bearer " token)
+      {:pool    ex/cp
+       :headers {"authorization" (str "Bearer " token)
                  "content-type"  "application/json; charset=utf-8"}
        :body    (json/encode
                   {:channel channel
@@ -76,7 +78,8 @@
   (d/chain
     (http/post
       ""
-      {:headers {"authorization" (str "Bearer " token)
+      {:pool    ex/cp
+       :headers {"authorization" (str "Bearer " token)
                  "content-type"  "application/json; charset=utf-8"}
        :body    (json/encode
                   {:channel in-channel
@@ -90,7 +93,8 @@
   (d/chain
     (http/post
       response-url
-      {:headers {"content-type" "application/json; charset=utf-8"}
+      {:pool    ex/cp
+       :headers {"content-type" "application/json; charset=utf-8"}
        :body    (json/encode
                   {:text          text
                    :response_type "ephemeral"})})
