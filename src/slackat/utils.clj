@@ -3,11 +3,11 @@
             [cheshire.core :as json]
             [byte-streams :as bs]
             [java-time :as jt]
-            [clojure.java.io :as io]
             [clojure.string :as string]
             [buddy.core.codecs :as codecs])
   (:import [java.util UUID]
-           [java.nio ByteBuffer]))
+           [java.nio ByteBuffer]
+           (org.ocpsoft.prettytime.nlp PrettyTimeParser)))
 
 
 ;; ---- response builders
@@ -159,6 +159,16 @@
       jt/to-millis-from-epoch
       (/ 1000)
       int))
+
+
+(defn parse-time
+  "Parse a human string to a utc datetime.
+  Ex. 'in 2 minutes'  '7pm tomorrow'"
+  [s]
+  (some-> (new PrettyTimeParser)
+          (.parse s)
+          first
+          (jt/zoned-date-time "UTC")))
 
 
 ;; ---- general

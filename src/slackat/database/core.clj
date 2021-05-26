@@ -1,6 +1,5 @@
 (ns slackat.database.core
   (:require [slackat.config :as config]
-            [clojure.spec.alpha :as s]
             [hikari-cp.core :refer [make-datasource]]
             [clojure.string :as string]
             [clojure.java.jdbc :as j]

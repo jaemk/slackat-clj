@@ -1,17 +1,10 @@
 (ns slackat.handlers
   (:require [taoensso.timbre :as t]
             [manifold.deferred :as d]
-            [manifold.stream :as s]
-            [manifold.time :as dtime]
-            [byte-streams :as bs]
-            [aleph.http :as http]
             [java-time :as jt]
             [clojure.java.jdbc :as j]
-            [clojure.core.async :as a]
             [clojure.core.cache :as cache]
             [clojure.string :as str]
-            [cheshire.core :as json]
-            [slackat.execution :as ex]
             [slackat.database.core :as db]
             [slackat.crypto :as cr]
             [slackat.utils :as u :refer [->resp ->text ->json ->redirect]]
@@ -211,12 +204,34 @@
 (def login-url (format "%s/login" (config/v :host)))
 
 
-(defn process-cmd' [text]
-  (let [text text
-        post-at (jt/plus (u/utc-now) (jt/seconds 30))]
-    [{:text    text
-      :post-at post-at}
-     (format "Scheduled \"%s\" to be sent at %s" text post-at)]))
+(def help
+  "Ex. /at 5a tomorrow *send* Good Morning!")
+
+(defn needs-help? [s]
+  (->> ["h" "help" "-h" "--help"]
+       (map = (repeat s))
+       (filter true?)
+       empty?
+       not))
+
+
+(defn process-cmd'
+  "Parse a command-string into the {:text :post-at} that should be
+  scheduled and a message that should be sent back immediately
+  as an ephemeral response"
+  [command-text]
+  (let [res {:text nil :post-at nil}
+        s (-> command-text str/lower-case u/trim-to-nil)
+        s' (if (re-find #"send" s) s nil)
+        [time-str text] (some-> s' (str/split #"send"))
+        time (some-> time-str u/parse-time)]
+    (if (needs-help? s)
+      [nil help]
+      (let [text text
+            post-at time]
+        [(assoc res :text text
+                    :post-at post-at)
+         (format "Scheduled \"%s\" to be sent at %s" text post-at)]))))
 
 (defn process-cmd [params]
   (let [{:strs [command text user_id team_id channel_id response_url]} params
@@ -244,14 +259,19 @@
   (->
     (d/chain (future (process-cmd params))
              (fn [processed]
-               (let [{:keys [result api-token channel]} processed]
-                 (do
-                   (when-let [{:keys [text post-at]} result]
-                     (d/chain (slack/schedule-message {:channel channel
-                                                       :token   api-token
-                                                       :text    text
-                                                       :post-at post-at})))
-                   (d/success-deferred processed))))
+               (let [{:keys [result api-token channel url]} processed]
+                 (d/chain
+                   (if-let [{:keys [text post-at]} result]
+                     (slack/schedule-message {:channel channel
+                                              :token   api-token
+                                              :text    text
+                                              :post-at post-at})
+                     nil)
+                   (fn [resp]
+                     (if-let [err (u/get-some-> resp :body "error")]
+                       {:url url
+                        :response (format "Woops, something went wrong: %s" err)}
+                       processed)))))
              (fn [{:keys [response url]}]
                (slack/slash-respond url response)))
     (d/catch
