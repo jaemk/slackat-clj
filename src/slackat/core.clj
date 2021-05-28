@@ -6,15 +6,13 @@
             [ring.middleware.params :as params]
             [ring.util.request :as ring-request]
             [compojure.response :refer [Renderable]]
-            [clojure.java.jdbc :as j]
             [slackat.router :as router]
             [slackat.utils :as u :refer [->resp]]
             [slackat.config :as config]
-            [slackat.database.core :as db]
-            [clojure.spec.alpha :as s]
             [slackat.commands.core :as cmd])
   (:gen-class)
-  (:import (java.net InetSocketAddress)))
+  (:import (java.net InetSocketAddress)
+           (java.io Closeable)))
 
 
 (set! *warn-on-reflection* true)
@@ -51,7 +49,7 @@
                   (t/error "UNKNOWN ERROR"
                            {:type nil
                             :exc-info e})
-                  (->resp :status 500 :body "Something went wrong"))
+                  (->resp {:status 500 :body "Something went wrong"}))
                 (do
                   (reset! status (-> info :resp :status))
                   (t/error "ERROR"
@@ -100,14 +98,13 @@
       :or {port (config/v :app-port)
            public (config/v :app-public)}}]
   (let [host (if public "0.0.0.0" "127.0.0.1")
-        addr (InetSocketAddress. host port)]
-    (do
-      (t/info "starting http server" {:addr addr})
-      (reset! *http-server*
-        (let [s (init-server {:socket-address addr
-                              :raw-stream? true})]
-          (t/info "started http server" {:addr addr})
-          s)))))
+        addr (InetSocketAddress. ^String host ^Integer port)]
+    (t/info "starting http server" {:addr addr})
+    (reset! *http-server*
+      (let [s (init-server {:socket-address addr
+                            :raw-stream? true})]
+        (t/info "started http server" {:addr addr})
+        s))))
 
 
 (defn stop-server!
@@ -116,12 +113,10 @@
   (swap!
     *http-server*
     (fn [svr]
-      (do
-        (when (not (nil? svr))
-          (do
-            (.close svr)
-            (t/info "server closed!")))
-        svr))))
+      (when (not (nil? svr))
+        (.close ^Closeable svr)
+        (t/info "server closed!"))
+      svr)))
 
 
 (defn restart-server!
@@ -148,11 +143,9 @@
   (swap!
     *repl-server*
     (fn [svr]
-      (do
-        (when (not (nil? svr))
-          (do
-            (nrepl.server/stop-server svr)
-            (t/info "nrepl-server closed!")))))))
+      (when (not (nil? svr))
+        (nrepl.server/stop-server svr)
+        (t/info "nrepl-server closed!")))))
 
 
 (defn reload
@@ -163,9 +156,8 @@
 
 (defn -main
   [& _args]
-  (do
-    (t/info "checking config"
-            {:num-threads (config/v :num-threads)})
-    (cmd/migrate!)
-    (start-repl!)
-    (start-server!)))
+  (t/info "checking config"
+          {:num-threads (config/v :num-threads)})
+  (cmd/migrate!)
+  (start-repl!)
+  (start-server!))

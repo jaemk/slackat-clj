@@ -4,6 +4,8 @@
             [byte-streams :as bs]
             [java-time :as jt]
             [clojure.string :as string]
+            [clojure.pprint :as pprint]
+            [ring.util.codec :as ring-codec]
             [buddy.core.codecs :as codecs])
   (:import [java.util UUID]
            [java.nio ByteBuffer]
@@ -11,52 +13,55 @@
 
 
 ;; ---- response builders
-(defn- extract-header-kwargs [kwargs default-headers]
-  (let [headers (or (get kwargs :headers) {})
-        kwargs (dissoc kwargs :headers)
+(defn- extract-header-opts [opts default-headers]
+  (let [headers (or (get opts :headers) {})
+        opts (dissoc opts :headers)
         headers (merge default-headers headers)]
-    [kwargs headers]))
+    [opts headers]))
 
 (defn ->resp
   "Construct a response map
-  Any kwargs provided are merged into a default 200 response"
-  [& kwargs]
-  (let [kwargs (apply hash-map kwargs)
-        ct (or (:ct kwargs) "text/plain")
-        kwargs (dissoc kwargs :ct)
+  Any options provided are merged into a default 200 response"
+  ([] ->resp {})
+  ([opts]
+   (let [ct (or (:ct opts) "text/plain")
+         opts (dissoc opts :ct)
 
-        [kwargs headers] (extract-header-kwargs kwargs {"content-type" ct})
-        default {:status  200
-                 :headers headers
-                 :body    ""}]
-    (merge default kwargs)))
+         [opts headers] (extract-header-opts opts {"content-type" ct})
+         default {:status  200
+                  :headers headers
+                  :body    ""}]
+     (merge default opts))))
 
-(defn ->text [s & kwargs]
-  (let [kwargs (apply hash-map kwargs)
-        s (if (instance? String s) s (str s))
-        [kwargs headers] (extract-header-kwargs kwargs {"content-type" "text/plain"})]
-    (merge
-      {:status  200
-       :headers headers
-       :body    s}
-      kwargs)))
+(defn ->text
+  ([s] (->text s {}))
+  ([s opts]
+   (let [s (if (instance? String s) s (str s))
+         [opts headers] (extract-header-opts opts {"content-type" "text/plain"})]
+     (merge
+       {:status  200
+        :headers headers
+        :body    s}
+       opts))))
 
-(defn ->json [mapping & kwargs]
-  (let [kwargs (apply hash-map kwargs)
-        [kwargs headers] (extract-header-kwargs kwargs {"content-type" "application/json"})]
-    (merge
-      {:status  200
-       :headers headers
-       :body    (json/encode mapping)}
-      kwargs)))
+(defn ->json
+  ([mapping] (->json mapping {}))
+  ([mapping opts]
+   (let [[opts headers] (extract-header-opts opts {"content-type" "application/json"})]
+     (merge
+       {:status  200
+        :headers headers
+        :body    (json/encode mapping)}
+       opts))))
 
-(defn ->redirect [to & kwargs]
-  (let [kwargs (apply hash-map kwargs)
-        [kwargs headers] (extract-header-kwargs kwargs {"location" to})]
-    (merge
-      {:status  307
-       :headers headers}
-      kwargs)))
+(defn ->redirect
+  ([to] (->redirect to {}))
+  ([to opts]
+   (let [[opts headers] (extract-header-opts opts {"location" to})]
+     (merge
+       {:status  307
+        :headers headers}
+       opts))))
 
 
 ;; ---- http (server & client) utils
@@ -71,7 +76,7 @@
   (->> r
        :body
        bs/to-string
-       ring.util.codec/form-decode
+       ring-codec/form-decode
        (assoc r :body)))
 
 
@@ -83,7 +88,7 @@
     (ex-info e-msg
              {:type :invalid-request
               :msg  e-msg
-              :resp (->resp :status 400 :body resp-msg)})))
+              :resp (->resp {:status 400 :body resp-msg})})))
 
 (defn ex-unauthorized!
   [& {:keys [e-msg resp-msg] :or {e-msg    "unauthorized"
@@ -92,7 +97,7 @@
     (ex-info e-msg
              {:type :invalid-request
               :msg  e-msg
-              :resp (->resp :status 401 :body resp-msg)})))
+              :resp (->resp {:status 401 :body resp-msg})})))
 
 (defn ex-not-found!
   [& {:keys [e-msg resp-msg] :or {e-msg    "item not found"
@@ -101,7 +106,7 @@
     (ex-info e-msg
              {:type :invalid-request
               :msg  e-msg
-              :resp (->resp :status 404 :body resp-msg)})))
+              :resp (->resp {:status 404 :body resp-msg})})))
 
 (defn ex-does-not-exist! [record-type]
   (let [msg (format "%s does not exist" record-type)]
@@ -111,7 +116,7 @@
         {:type  :does-not-exist
          :cause record-type
          :msg   msg
-         :resp  (->resp :status 404 :body "item not found")}))))
+         :resp  (->resp {:status 404 :body "item not found"})}))))
 
 (defn ex-error!
   [e-msg & {:keys [resp-msg cause] :or {resp-msg "something went wrong"
@@ -122,7 +127,7 @@
       {:type  :internal-error
        :cause cause
        :msg   e-msg
-       :resp  (->resp :status 500 :body resp-msg)})))
+       :resp  (->resp {:status 500 :body resp-msg})})))
 
 
 ;; ---- macros
@@ -177,7 +182,7 @@
   ([arg desc]
    (let [desc (if (nil? desc) "" (str ": " desc))]
      (println (format "=============== [SPY%s] ===============" desc))
-     (clojure.pprint/pprint arg)
+     (pprint/pprint arg)
      (println "=====================================")
      arg)))
 

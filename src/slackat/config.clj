@@ -1,10 +1,10 @@
 (ns slackat.config
   (:require [taoensso.timbre :as t]
             [cheshire.core :as json]
-            [cheshire.generate :refer [add-encoder encode-str remove-encoder]]
+            [clojure.string :as string]
+            [cheshire.generate :refer [add-encoder]]
             [slackat.utils :as u])
-  (:import (java.time Instant)
-           (java.time ZoneId)
+  (:import (java.time ZoneId)
            (java.time.format DateTimeFormatter)
            (java.io StringWriter)
            (java.io PrintWriter)))
@@ -118,7 +118,7 @@
       :else (merge data {:args log-args}))))
 
 (defn build-log-map [data]
-  (let [{:keys [level instant config vargs ?ns-str ?line ?msg-fmt]} data
+  (let [{:keys [level instant _config vargs ?ns-str ?line ?msg-fmt]} data
         real-instant (.toInstant instant)
         utc-time (.atZone real-instant utc-zone)
         local-time (.atZone real-instant ny-zone)
@@ -137,11 +137,11 @@
 
 (defn fmt-log-data [data]
   (->> (seq data)
-       (remove (fn [[k v]]
+       (remove (fn [[k _]]
                  (-> (namespace k)
                      (= "_"))))
-       (map #(clojure.string/join "=" %))
-       (clojure.string/join " ")))
+       (map #(string/join "=" %))
+       (string/join " ")))
 
 (defn fmt-log [data]
   (if-not @*pretty-console-logs*

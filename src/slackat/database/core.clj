@@ -5,7 +5,9 @@
             [clojure.java.jdbc :as j]
             [honeysql.core :as sql]
             [honeysql.helpers :as h]
-            [honeysql-postgres.format :refer :all]
+            [honeysql.format]
+            [honeysql.types]
+            #_:clj-kondo/ignore [honeysql-postgres.format :refer :all]
             [honeysql-postgres.helpers :as pg]
             [slackat.utils :as u]
             [taoensso.timbre :as t])
@@ -38,13 +40,15 @@
 
 ; ----- postgres/jdbc/honeysql extensions ------
 ;; todo: move this to a different namespace
-(defn kw-namespace->enum-type [namespace']
+(defn kw-namespace->enum-type
   "Convert a keyword's namespace to a postgres enum type's name"
+  [namespace']
   ;; todo: add the schema here if necessary, define in the +schema-enums+ map
   (u/kebab->under namespace'))
 
-(defn kw->pg-enum [kw]
+(defn kw->pg-enum
   "Converts a namespaced keyword to a jdbc/postgres enum"
+  [kw]
   (let [type (-> (namespace kw)
                  (kw-namespace->enum-type))
         value (name kw)]
@@ -60,9 +64,10 @@
     (kw->pg-enum kw)))
 
 
-(defn kw-to-sql [kw]
+(defn kw-to-sql
   "Copy of honeysql's internal Keyword to-sql functionality so we can extend
   the ToSql protocol below"
+  [kw]
   (let [s (name kw)]
     (case (.charAt s 0)
       \% (let [call-args (string/split (subs s 1) #"\." 2)]
@@ -101,18 +106,20 @@
 
 
 ; ----- helpers ------
-(defn first-or-err [ty]
+(defn first-or-err
   "create a fn for retrieving a single row or throwing an error"
+  [ty]
   (fn [result-set]
     (if-let [one (first result-set)]
       one
       (u/ex-does-not-exist! ty))))
 
 
-(defn pluck [rs & {:keys [empty->nil]
-                   :or   {empty->nil false}}]
+(defn pluck
   "Plucks the first item from a result-set if it's a seq of only one item.
    Asserts the result-set, `rs`, has something in it, unless `:empty->nil true`"
+  [rs & {:keys [empty->nil]
+         :or   {empty->nil false}}]
   (let [empty-or-nil (or (nil? rs)
                          (empty? rs))]
     (cond
@@ -125,9 +132,10 @@
                 rs)))))
 
 
-(defn insert! [conn stmt]
+(defn insert!
   "Executes insert statement returning a single map if
   the insert result is a seq of one item"
+  [conn stmt]
   (j/query conn
            (-> stmt
                (pg/returning :*)

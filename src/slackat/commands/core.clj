@@ -1,9 +1,7 @@
 (ns slackat.commands.core
   (:require [slackat.utils :as u]
             [slackat.database.core :as db]
-            [clojure.java.jdbc :as j]
             [clojure.core.match :refer [match]]
-            [honeysql.core :as sql]
             [migratus.core :as migratus]))
 
 

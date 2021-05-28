@@ -17,9 +17,10 @@
     state
     (slackat.config/v :slack-client-id)))
 
-(defn exchange-access [code]
+(defn exchange-access
   "https://api.slack.com/authentication/oauth-v2
-  https://api.slack.com/methods/oauth.v2.access"
+   https://api.slack.com/methods/oauth.v2.access"
+  [code]
   (d/chain
     (http/post
       "https://slack.com/api/oauth.v2.access"
@@ -40,8 +41,7 @@
            markdown]
     :or {url "https://slack.com/api/chat.postMessage"
          as-user true
-         markdown true}
-    :as options}]
+         markdown true}}]
   (d/chain
     (http/post
       url
@@ -57,7 +57,7 @@
 
 
 (defn schedule-message
-  ;; "https://api.slack.com/messaging/scheduling#scheduling"
+  "https://api.slack.com/messaging/scheduling#scheduling"
   [{:keys [channel token text post-at]}]
   (d/chain
     (http/post
@@ -73,7 +73,7 @@
 
 
 (defn list-messages
-  ;; "https://api.slack.com/messaging/scheduling#listing"
+  "https://api.slack.com/messaging/scheduling#listing"
   [token {:keys [after-ts before-ts in-channel]}]
   (d/chain
     (http/post
@@ -89,7 +89,9 @@
 
 
 
-(defn slash-respond [response-url text]
+(defn slash-respond
+  "Send a reply to a slack response url"
+  [response-url text]
   (d/chain
     (http/post
       response-url

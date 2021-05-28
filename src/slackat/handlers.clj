@@ -1,22 +1,26 @@
 (ns slackat.handlers
   (:require [taoensso.timbre :as t]
             [manifold.deferred :as d]
+            [manifold.time :as time]
             [java-time :as jt]
             [clojure.java.jdbc :as j]
             [clojure.core.cache :as cache]
             [clojure.string :as str]
+            [clojure.walk :as walk]
+            [buddy.core.codecs :as codecs]
             [slackat.database.core :as db]
             [slackat.crypto :as cr]
             [slackat.utils :as u :refer [->resp ->text ->json ->redirect]]
             [slackat.slack :as slack]
-            [slackat.config :as config])
+            [slackat.config :as config]
+            [clojure.string :as string])
   (:import (java.time Instant)
            (java.sql Timestamp)))
 
 
-(defn user-for-req [req]
+(defn user-for-req
   "load a user based on their auth token, or null"
-  ;(u/spy req :on-index)
+  [req]
   (let [cookie (u/get-some-> req :headers :cookie)
         [_ token] (some->> cookie (re-find #"auth_token=(\w+)"))
         user-auth (some->> token cr/sign (db/get-user-for-auth (db/conn)))
@@ -31,11 +35,22 @@
 
 
 (defn index [req]
-  (d/let-flow [user (d/future (user-for-req req))]
-              (if (some? user)
-                (->text "Welcome back!")
-                (->redirect "/login?redirect=/"))))
+  (d/chain
+    (d/future (user-for-req req))
+    (fn [user]
+      (if (some? user)
+        (->text "Welcome back!")
+        (->redirect "/login?redirect=/")))))
 
+
+(defn status [_]
+  (->json {:status  :ok
+           :version (config/v :app-version)}))
+
+
+(defn not-found [_]
+  (->resp {:body   "nothing to see here"
+           :status 404}))
 
 ;; -- slack authentication unique state token store
 ;; 2m ttl of one-time state-tokens used for slack logins
@@ -45,7 +60,7 @@
   "Make a new one-time state-token and cache it temporarily"
   []
   (-> (cr/rand-bytes 32)
-      buddy.core.codecs/bytes->hex
+      codecs/bytes->hex
       ((fn [hex]
          (swap! state-tokens (fn [s]
                                (cache/evict s hex)
@@ -63,8 +78,7 @@
         (swap!
           valid
           (fn [_]
-            (and
-              (cache/has? s token))))
+            (cache/has? s token)))
         (cache/evict s token)))
     @valid))
 
@@ -88,7 +102,7 @@
       (u/ex-error! (format "Found invalid state token in slack login redirect: %s" state-str))
       [state-token (-> metadata
                        u/b64-str->map
-                       clojure.walk/keywordize-keys
+                       walk/keywordize-keys
                        cr/decrypt
                        u/b64-str->map)])))
 
@@ -197,8 +211,8 @@
               (if-let [redirect (u/get-some-> metadata "redirect")]
                 ;; handle ?redirect= query param that we set when we did our initial _internal_
                 ;; redirect from some page (e.g. /) to /login?redirect=/
-                (->redirect redirect :headers headers)
-                (->text "Welcome!" :headers headers)))))))))
+                (->redirect redirect {:headers headers})
+                (->text "Welcome!" {:headers headers})))))))))
 
 
 (def login-url (format "%s/login" (config/v :host)))
@@ -208,11 +222,20 @@
   "Ex. /at 5a tomorrow *send* Good Morning!")
 
 (defn needs-help? [s]
-  (->> ["h" "help" "-h" "--help"]
+  (->> ["h" "help" "-h" "--help" "" nil]
        (map = (repeat s))
        (filter true?)
-       empty?
-       not))
+       seq))
+
+(defn is-cmd-list? [s]
+  (->> ["l" "list" "-l" "--list"]
+       (map = (repeat s))
+       (filter true?)
+       seq))
+
+
+(defn list-scheduled []
+  "list!")
 
 
 (defn process-cmd'
@@ -223,18 +246,18 @@
   (let [res {:text nil :post-at nil}
         s (-> command-text str/lower-case u/trim-to-nil)
         s' (if (re-find #"send" s) s nil)
-        [time-str text] (some-> s' (str/split #"send"))
-        time (some-> time-str u/parse-time)]
-    (if (needs-help? s)
-      [nil help]
-      (let [text text
-            post-at time]
-        [(assoc res :text text
-                    :post-at post-at)
-         (format "Scheduled \"%s\" to be sent at %s" text post-at)]))))
+        [time-str text] (some-> s' (str/split #"send" 2))
+        time (some-> time-str u/parse-time)
+        text (some-> text string/triml)]
+    (cond
+      (needs-help? s) [nil help]
+      (is-cmd-list? s) [nil (list-scheduled)]
+      :else [(assoc res :text text
+                        :post-at time)
+             (format "Scheduled \"%s\" to be sent at %s" text time)])))
 
 (defn process-cmd [params]
-  (let [{:strs [command text user_id team_id channel_id response_url]} params
+  (let [{:strs [text user_id team_id channel_id response_url]} params
         res {:result    nil
              :api-token nil
              :channel   channel_id
@@ -269,7 +292,7 @@
                      nil)
                    (fn [resp]
                      (if-let [err (u/get-some-> resp :body "error")]
-                       {:url url
+                       {:url      url
                         :response (format "Woops, something went wrong: %s" err)}
                        processed)))))
              (fn [{:keys [response url]}]
@@ -285,7 +308,11 @@
   (let [req (u/parse-form-body req)
         body (:body req)
         _ (u/spy body :slack-cmd)]
-    (manifold.time/in
+    (time/in
+      ;; spawn the cmd processor in the background, waiting
+      ;; a short while to let the webhook respond before we
+      ;; send a processed result.
+      ;; Time in ms
       100
       (fn []
         (process-cmd-send-result body)))
