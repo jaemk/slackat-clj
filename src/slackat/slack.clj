@@ -24,7 +24,7 @@
   (d/chain
     (http/post
       "https://slack.com/api/oauth.v2.access"
-      {:pool ex/cp
+      {:pool        ex/cp
        :form-params {"client_id"     (config/v :slack-client-id)
                      "client_secret" (config/v :slack-client-secret)
                      "code"          code}})
@@ -39,9 +39,9 @@
            text
            token
            markdown]
-    :or {url "https://slack.com/api/chat.postMessage"
-         as-user true
-         markdown true}}]
+    :or   {url      "https://slack.com/api/chat.postMessage"
+           as-user  true
+           markdown true}}]
   (d/chain
     (http/post
       url
@@ -74,19 +74,19 @@
 
 (defn list-messages
   "https://api.slack.com/messaging/scheduling#listing"
-  [token {:keys [after-ts before-ts in-channel]}]
+  [token {:keys [after-ts before-ts channel]}]
   (d/chain
     (http/post
-      ""
+      "https://slack.com/api/chat.scheduledMessages.list"
       {:pool    ex/cp
        :headers {"authorization" (str "Bearer " token)
                  "content-type"  "application/json; charset=utf-8"}
        :body    (json/encode
-                  {:channel in-channel
-                   :oldest  (some-> after-ts u/dt->unix-seconds)
-                   :latest  (some-> before-ts u/dt->unix-seconds)})})))
-
-
+                  (u/filter-nil-vals
+                    {:channel channel
+                     :oldest  (some-> after-ts u/dt->unix-seconds)
+                     :latest  (some-> before-ts u/dt->unix-seconds)}))})
+    u/parse-json-body))
 
 
 (defn slash-respond

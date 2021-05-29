@@ -166,6 +166,12 @@
       int))
 
 
+(defn unix-seconds->dt [seconds-int]
+  (-> seconds-int
+      jt/to-java-date
+      (jt/zoned-date-time "UTC")))
+
+
 (defn parse-time
   "Parse a human string to a utc datetime.
   Ex. 'in 2 minutes'  '7pm tomorrow'"
@@ -191,6 +197,15 @@
   (some-> s
           string/trim
           (#(if (empty? %) nil %))))
+
+
+(defn filter-nil-vals
+  [m]
+  (select-keys
+    m
+    (for [[k v] m
+          :when (not (nil? v))]
+      k)))
 
 
 ;; -- base64 map serialization

@@ -226,11 +226,14 @@
        (filter true?)
        seq))
 
-(defn is-cmd-list? [s]
+(defn is-list-cmd? [s]
   (->> ["l" "list" "-l" "--list"]
        (map = (repeat s))
        (filter true?)
        seq))
+
+
+(def CANCEL-RE #"cancel\s?(.*)\s?")
 
 
 (defn parse-cmd-str
@@ -239,8 +242,10 @@
   as an ephemeral response"
   [command-text]
   (let [s (-> command-text string/lower-case u/trim-to-nil)
-        s' (if (re-find #"send" s) s nil)
-        [time-str text] (some-> s' (string/split #"send" 2))
+        [is-cancel cancel-id] (re-find CANCEL-RE s)
+        cancel-id (u/trim-to-nil cancel-id)
+        send-s (if (re-find #"send" s) s nil)
+        [time-str text] (some-> send-s (string/split #"send" 2))
         time (some-> time-str u/parse-time)
         text (some-> text string/triml)
         cmd {:command  {:type nil
@@ -248,7 +253,10 @@
              :response nil}]
     (cond
       (needs-help? s) (assoc-in cmd [:command :type] :help)
-      (is-cmd-list? s) (assoc-in cmd [:command :type] :list)
+      (is-list-cmd? s) (assoc-in cmd [:command :type] :list)
+      is-cancel (-> cmd
+                    (assoc-in [:command :type] :cancel)
+                    (assoc-in [:command :args] {:message-id cancel-id}))
       :else (-> cmd
                 (assoc-in [:command :type] :schedule)
                 (assoc-in [:command :args] {:text text :post-at time})
@@ -286,9 +294,31 @@
     (format "Yikes, something went wrong: %s" err)))
 
 
-(defn handle-list-cmd [parsed]
-  (assoc parsed :response "list!"))
+(defn fmt-msg [msg]
+  (let [{:strs [id post_at text]} msg]
+    (format "%s [%s]: %s" id (u/unix-seconds->dt post_at) text)))
 
+
+(defn handle-list-cmd
+  [parsed]
+  (let [{:keys [command api-token slack-channel-id]} parsed
+        {:keys [type]} command]
+    (assert (= type :list) (format "expected :list, got %s" type))
+    (d/chain
+      (slack/list-messages api-token {:channel slack-channel-id})
+      (fn [resp]
+        (let [scheduled (u/get-some-> resp :body "scheduled_messages")]
+          (->> (map fmt-msg scheduled)
+               (string/join "\n")
+               (str "Scheduled:\n")
+               (assoc parsed :response)))))))
+
+(defn handle-cancel-cmd
+  [parsed]
+  (let [cancel-id (u/get-some-> parsed :command :args :message-id)]
+    (if cancel-id
+      (assoc parsed :response (format "Cancelled %s!" cancel-id))
+      (assoc parsed :response (format "Cancel what?")))))
 
 (defn handle-schedule-cmd
   [parsed]
@@ -322,6 +352,7 @@
     (case type
       :help (assoc parsed :response help)
       :list (handle-list-cmd parsed)
+      :cancel (handle-cancel-cmd parsed)
       :schedule (handle-schedule-cmd parsed)
       (unhandled-command parsed))))
 
