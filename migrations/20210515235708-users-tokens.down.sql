@@ -1,6 +1,6 @@
 drop table slackat.slack_tokens;
 --;;
-drop type slackat.slack_token_type;
+drop table slackat.slack_token_enum;
 --;;
 drop table slackat.auth_tokens;
 --;;

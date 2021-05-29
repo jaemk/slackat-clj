@@ -1,7 +1,6 @@
 (ns slackat.database-test
   (:use midje.sweet)
   (:require [slackat.database.core :as db]
-            [slackat.utils :as u]
             [slackat.test-utils :refer [setup-db
                                         teardown-db
                                         truncate-db]]))
@@ -26,16 +25,16 @@
         (:conn @test-db)
         {:salt          "1"
          :iv            "1"
-         :type          :slack-token-type/user
+         :type          "user"
          :slack-id      "USER1"
          :slack-team-id "TEAM1"
          :scope         ["read" "write"]
          :encrypted     "xxx"}) =>
       (fn [result]
-        (swap! state #(assoc % :slack-token result)) ; save for later
+        (swap! state #(assoc % :slack-token result))        ; save for later
         (and
           (= (-> result :slack_id) "USER1")
-          (= (-> result :type) :slack-token-type/user)
+          (= (-> result :type) "user")
           (= (-> result :slack_team_id) "TEAM1")))
 
       ; lookup by user & team
@@ -51,7 +50,7 @@
         (:conn @test-db)
         {:salt          "2"
          :iv            "2"
-         :type          :slack-token-type/user
+         :type          "user"
          :slack-id      "USER1"
          :slack-team-id "TEAM1"
          :scope         ["read" "write" "smell"]
@@ -69,5 +68,5 @@
     (fact
       "we can truncate the db"
       (db/get-slack-tokens-for-user (:conn @test-db) "USER1" "TEAM1") =>
-        (fn [result]
-          (empty? result)))))
+      (fn [result]
+        (empty? result)))))

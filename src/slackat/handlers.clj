@@ -5,7 +5,6 @@
             [java-time :as jt]
             [clojure.java.jdbc :as j]
             [clojure.core.cache :as cache]
-            [clojure.string :as str]
             [clojure.walk :as walk]
             [buddy.core.codecs :as codecs]
             [slackat.database.core :as db]
@@ -97,7 +96,7 @@
   "Parse a formatted state token string into the
   separate state-token and metadata parts"
   [state-str]
-  (let [[state-token metadata] (str/split state-str #"\.")]
+  (let [[state-token metadata] (string/split state-str #"\.")]
     (if (or (nil? state-token) (nil? metadata))
       (u/ex-error! (format "Found invalid state token in slack login redirect: %s" state-str))
       [state-token (-> metadata
@@ -142,13 +141,13 @@
   (let [sla slack-auth-info
         bot-id (sla "bot_user_id")
         bot-token (sla "access_token")
-        bot-scope (some-> (sla "scope") u/trim-to-nil (str/split #","))
+        bot-scope (some-> (sla "scope") u/trim-to-nil (string/split #","))
         team-id (u/get-some-> sla "team" "id")
         user-id (u/get-some-> sla "authed_user" "id")
         user-token (u/get-some-> sla "authed_user" "access_token")
         user-scope (some-> (u/get-some-> sla "authed_user" "scope")
                            u/trim-to-nil
-                           (str/split #","))
+                           (string/split #","))
 
         bot-token-enc (cr/encrypt bot-token)
         user-token-enc (cr/encrypt user-token)]
@@ -162,14 +161,14 @@
             _ (db/upsert-slack-token tr {:iv            (:iv bot-token-enc)
                                          :salt          (:salt bot-token-enc)
                                          :encrypted     (:data bot-token-enc)
-                                         :type          :slack_token_type/bot
+                                         :type          "bot"
                                          :slack-id      bot-id
                                          :slack-team-id team-id
                                          :scope         bot-scope})
             _ (db/upsert-slack-token tr {:iv            (:iv user-token-enc)
                                          :salt          (:salt user-token-enc)
                                          :encrypted     (:data user-token-enc)
-                                         :type          :slack_token_type/user
+                                         :type          "user"
                                          :slack-id      user-id
                                          :slack-team-id team-id
                                          :scope         user-scope})]
@@ -238,15 +237,17 @@
   "list!")
 
 
+(defn schedule-message [text post-at])
+
 (defn process-cmd'
   "Parse a command-string into the {:text :post-at} that should be
   scheduled and a message that should be sent back immediately
   as an ephemeral response"
   [command-text]
   (let [res {:text nil :post-at nil}
-        s (-> command-text str/lower-case u/trim-to-nil)
+        s (-> command-text string/lower-case u/trim-to-nil)
         s' (if (re-find #"send" s) s nil)
-        [time-str text] (some-> s' (str/split #"send" 2))
+        [time-str text] (some-> s' (string/split #"send" 2))
         time (some-> time-str u/parse-time)
         text (some-> text string/triml)]
     (cond

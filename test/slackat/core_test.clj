@@ -1,8 +1,6 @@
 (ns slackat.core-test
   (:use midje.sweet)
-  (:require [slackat.database.core :as db]
-            [slackat.utils :as u]
-            [slackat.test-utils :refer [setup-db
+  (:require [slackat.test-utils :refer [setup-db
                                         teardown-db
                                         truncate-db]]))
 

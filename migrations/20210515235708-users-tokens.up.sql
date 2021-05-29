@@ -18,7 +18,11 @@ create table slackat.auth_tokens (
 --;;
 create index auth_token_user on slackat.auth_tokens(user_id);
 --;;
-create type slackat.slack_token_type as enum ('bot', 'user');
+create table slackat.slack_token_enum (
+    id text not null primary key
+);
+--;;
+insert into slackat.slack_token_enum (id) values ('bot'), ('user');
 --;;
 create table slackat.slack_tokens (
     id int8 not null primary key default slackat.id_gen(),
@@ -27,7 +31,7 @@ create table slackat.slack_tokens (
     iv text not null,
     salt text not null,
 
-    type slack_token_type not null,
+    type text references slackat.slack_token_enum(id) not null,
     slack_id text not null,
     slack_team_id text not null,
     scope text[] not null,

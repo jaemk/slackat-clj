@@ -19,7 +19,10 @@ begin
     from pg_tables
     where tableowner = 'slackat'
     and schemaname = 'slackat'
-    and tablename not like '%migrations%';
+    -- don't truncate migrations
+    and tablename not like '%migrations%'
+    -- don't truncate enum tables
+    and tablename not like '%_enum';
 
     stmt := 'truncate table ' || table_names || ' cascade';
     raise notice 'executing: %', stmt;

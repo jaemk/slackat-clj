@@ -1,19 +1,16 @@
 (ns slackat.database.core
   (:require [slackat.config :as config]
             [hikari-cp.core :refer [make-datasource]]
-            [clojure.string :as string]
             [clojure.java.jdbc :as j]
             [honeysql.core :as sql]
             [honeysql.helpers :as h]
             [honeysql.format]
             [honeysql.types]
-            #_:clj-kondo/ignore [honeysql-postgres.format :refer :all]
+    #_:clj-kondo/ignore
+            [honeysql-postgres.format :refer :all]
             [honeysql-postgres.helpers :as pg]
             [slackat.utils :as u]
-            [taoensso.timbre :as t])
-  (:import (clojure.lang Keyword)
-           (org.postgresql.util PGobject)
-           (java.sql ResultSetMetaData)))
+            [taoensso.timbre :as t]))
 
 
 ; ----- datasource config ------
@@ -34,75 +31,8 @@
   ([] (migration-config (conn)))
   ([connection] {:store         :database
                  :migration-dir "migrations"
-                 :init-script   "init.sql"
+                 ;:init-script   "init.sql"
                  :db            connection}))
-
-
-; ----- postgres/jdbc/honeysql extensions ------
-;; todo: move this to a different namespace
-(defn kw-namespace->enum-type
-  "Convert a keyword's namespace to a postgres enum type's name"
-  [namespace']
-  ;; todo: add the schema here if necessary, define in the +schema-enums+ map
-  (u/kebab->under namespace'))
-
-(defn kw->pg-enum
-  "Converts a namespaced keyword to a jdbc/postgres enum"
-  [kw]
-  (let [type (-> (namespace kw)
-                 (kw-namespace->enum-type))
-        value (name kw)]
-    (doto (PGobject.)
-      (.setType type)
-      (.setValue value))))
-
-
-(extend-type Keyword
-  j/ISQLValue
-  (sql-value [kw]
-    "Extends keywords to be auto-converted by jdbc to postgres enums"
-    (kw->pg-enum kw)))
-
-
-(defn kw-to-sql
-  "Copy of honeysql's internal Keyword to-sql functionality so we can extend
-  the ToSql protocol below"
-  [kw]
-  (let [s (name kw)]
-    (case (.charAt s 0)
-      \% (let [call-args (string/split (subs s 1) #"\." 2)]
-           (honeysql.format/to-sql (apply honeysql.types/call (map keyword call-args))))
-      \? (honeysql.format/to-sql (honeysql.types/param (keyword (subs s 1))))
-      (honeysql.format/quote-identifier kw))))
-
-(extend-protocol honeysql.format/ToSql
-  Keyword
-  (to-sql [kw]
-    "Extends honeysql to convert namespaced keywords to pg enums"
-    (let [type (namespace kw)]
-      (if (nil? type)
-        (kw-to-sql kw) ;; do default honeysql conversions
-        (let [type (kw-namespace->enum-type type)
-              enum-value (format "'%s'::%s" (name kw) type)]
-          enum-value)))))
-
-
-(def +schema-enums+
-  "A set of all PostgreSQL enums in schema.sql. Used to convert
-  enum-values back into namespaced keywords."
-  #{"slack_token_type"})
-
-
-(extend-type String
-  j/IResultSetReadColumn
-  (result-set-read-column [val
-                           ^ResultSetMetaData rsmeta
-                           idx]
-    "Hook in enum->keyword conversion for all registered `schema-enums`"
-    (let [type (.getColumnTypeName rsmeta idx)]
-      (if (contains? +schema-enums+ type)
-        (keyword (u/under->kebab type) val)
-        val))))
 
 
 ; ----- helpers ------
@@ -160,8 +90,8 @@
 
 
 (defn query [conn stmt & {:keys [first-err-key row-fn result-set-fn]
-                          :or   {first-err-key  nil
-                                 row-fn identity}}]
+                          :or   {first-err-key nil
+                                 row-fn        identity}}]
   (let [rs-fn (if (nil? first-err-key)
                 result-set-fn
                 (first-or-err first-err-key))]
@@ -176,7 +106,7 @@
 ; ----- database queries ------
 (defn upsert-user
   "Insert a new or existing user, called after slack login redirect"
-  [conn {slack-id :slack-id
+  [conn {slack-id      :slack-id
          slack-team-id :slack-team-id}]
   (-> (insert!
         conn
@@ -191,12 +121,12 @@
 ;; todo: expire old auth tokens in a scheduled job
 (defn insert-user-auth
   "Save a user's auth token signature"
-  [conn {user-id :user-id
+  [conn {user-id   :user-id
          signature :signature}]
   (-> (insert!
         conn
         (-> (h/insert-into :slackat.auth_tokens)
-            (h/values [{:user-id user-id
+            (h/values [{:user-id   user-id
                         :signature signature}])))))
 
 
@@ -252,7 +182,7 @@
              (h/from :slackat.slack_tokens)
              (h/where [:= :slack_id slack-user-id]
                       [:= :slack_team_id slack-team-id]
-                      [:= :type :slack-token-type/user])
+                      [:= :type "user"])
              (h/order-by [:created :desc]))
          :result-set-fn #(pluck % :empty->nil true)))
 
@@ -263,5 +193,5 @@
              (h/from :slackat.slack_tokens)
              (h/where [:= :slack_id slack-user-id]
                       [:= :slack_team_id slack-team-id]
-                      [:= :type :slack-token-type/user])
+                      [:= :type :user])
              (h/order-by [:created :desc]))))
