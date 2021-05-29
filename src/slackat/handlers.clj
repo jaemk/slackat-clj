@@ -233,7 +233,7 @@
        seq))
 
 
-(def CANCEL-RE #"cancel\s?(.*)\s?")
+(def CANCEL-RE #"(?i)cancel\s?(.*)\s?")
 
 
 (defn parse-cmd-str
@@ -241,11 +241,11 @@
   scheduled and a message that should be sent back immediately
   as an ephemeral response"
   [command-text]
-  (let [s (-> command-text string/lower-case u/trim-to-nil)
+  (let [s (-> command-text u/trim-to-nil)
         [is-cancel cancel-id] (re-find CANCEL-RE s)
         cancel-id (u/trim-to-nil cancel-id)
-        send-s (if (re-find #"send" s) s nil)
-        [time-str text] (some-> send-s (string/split #"send" 2))
+        send-s (if (re-find #"(?i)send" s) s nil)
+        [time-str text] (some-> send-s (string/split #"(?i)send" 2))
         time (some-> time-str u/parse-time)
         text (some-> text string/triml)
         cmd {:command  {:type nil
@@ -307,18 +307,30 @@
     (d/chain
       (slack/list-messages api-token {:channel slack-channel-id})
       (fn [resp]
-        (let [scheduled (u/get-some-> resp :body "scheduled_messages")]
-          (->> (map fmt-msg scheduled)
-               (string/join "\n")
-               (str "Scheduled:\n")
-               (assoc parsed :response)))))))
+        (let [scheduled (u/get-some-> resp :body "scheduled_messages")
+              err-msg (slack-resp->err-msg resp)]
+          (if err-msg
+            (assoc parsed :response err-msg)
+            (->> (map fmt-msg scheduled)
+                 (string/join "\n")
+                 (str "Scheduled:\n")
+                 (assoc parsed :response))))))))
+
 
 (defn handle-cancel-cmd
   [parsed]
-  (let [cancel-id (u/get-some-> parsed :command :args :message-id)]
+  (let [{:keys [command api-token slack-channel-id]} parsed
+        cancel-id (u/get-some-> command :args :message-id)]
     (if cancel-id
-      (assoc parsed :response (format "Cancelled %s!" cancel-id))
+      (d/chain
+        (slack/delete-message api-token slack-channel-id cancel-id)
+        (fn [resp]
+          (let [err-msg (slack-resp->err-msg resp)]
+            (if err-msg
+              (assoc parsed :response err-msg)
+              (assoc parsed :response (format "Cancelled %s!" cancel-id))))))
       (assoc parsed :response (format "Cancel what?")))))
+
 
 (defn handle-schedule-cmd
   [parsed]

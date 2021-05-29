@@ -89,6 +89,22 @@
     u/parse-json-body))
 
 
+(defn delete-message
+  "https://api.slack.com/messaging/scheduling#deleting"
+  [token channel message]
+  (d/chain
+    (http/post
+      "https://slack.com/api/chat.deleteScheduledMessage"
+      {:pool    ex/cp
+       :headers {"authorization" (str "Bearer " token)
+                 "content-type"  "application/json; charset=utf-8"}
+       :body    (json/encode
+                  (u/filter-nil-vals
+                    {:channel              channel
+                     :scheduled_message_id message}))})
+    u/parse-json-body))
+
+
 (defn slash-respond
   "Send a reply to a slack response url"
   [response-url text]
