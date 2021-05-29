@@ -233,71 +233,110 @@
        seq))
 
 
-(defn list-scheduled []
-  "list!")
-
-
-(defn schedule-message [text post-at])
-
-(defn process-cmd'
+(defn parse-cmd-str
   "Parse a command-string into the {:text :post-at} that should be
   scheduled and a message that should be sent back immediately
   as an ephemeral response"
   [command-text]
-  (let [res {:text nil :post-at nil}
-        s (-> command-text string/lower-case u/trim-to-nil)
+  (let [s (-> command-text string/lower-case u/trim-to-nil)
         s' (if (re-find #"send" s) s nil)
         [time-str text] (some-> s' (string/split #"send" 2))
         time (some-> time-str u/parse-time)
-        text (some-> text string/triml)]
+        text (some-> text string/triml)
+        cmd {:command  {:type nil
+                        :args nil}
+             :response nil}]
     (cond
-      (needs-help? s) [nil help]
-      (is-cmd-list? s) [nil (list-scheduled)]
-      :else [(assoc res :text text
-                        :post-at time)
-             (format "Scheduled \"%s\" to be sent at %s" text time)])))
+      (needs-help? s) (assoc-in cmd [:command :type] :help)
+      (is-cmd-list? s) (assoc-in cmd [:command :type] :list)
+      :else (-> cmd
+                (assoc-in [:command :type] :schedule)
+                (assoc-in [:command :args] {:text text :post-at time})
+                (assoc :response (format "Scheduled \"%s\" to be sent at %s" text time))))))
 
-(defn process-cmd [params]
+(defn parse-cmd
+  [params]
   (let [{:strs [text user_id team_id channel_id response_url]} params
-        res {:result    nil
-             :api-token nil
-             :channel   channel_id
-             :response  nil
-             :url       response_url}
+        parsed {:slack-channel-id channel_id
+                :slack-user-id    user_id
+                :slack-team-id    team_id
+                :response-url     response_url
+                ;; will be populated if we can find a user api token
+                :api-token        nil
+                ;; will be populated with a response to send to the response-url
+                :response         nil
+                ;; :schedule / :help / :list
+                :command          nil}
         token (db/get-slack-token-for-user (db/conn) user_id team_id)]
     (if (nil? token)
-      (let [response (format "Woops, looks like you need to login at %s" login-url)]
-        (assoc res
-          :response response))
+      parsed
       (let [api-token (cr/decrypt {:data (:encrypted token)
                                    :iv   (:iv token)
                                    :salt (:salt token)})
-            [result response] (process-cmd' text)]
-        (assoc res
+            {:keys [command response]} (parse-cmd-str text)]
+        (assoc parsed
           :api-token api-token
-          :result result
+          :command command
           :response response)))))
 
 
-(defn process-cmd-send-result [params]
+(defn slack-resp->err-msg
+  [resp]
+  (when-let [err (u/get-some-> resp :body "error")]
+    (format "Yikes, something went wrong: %s" err)))
+
+
+(defn handle-list-cmd [parsed]
+  (assoc parsed :response "list!"))
+
+
+(defn handle-schedule-cmd
+  [parsed]
+  (let [{:keys [command api-token slack-channel-id]} parsed
+        {:keys [type args]} command
+        {:keys [text post-at]} args]
+    (assert (= type :schedule) (format "expected :schedule, got %s" type))
+    (d/chain
+      (slack/schedule-message {:channel slack-channel-id
+                               :token   api-token
+                               :text    text
+                               :post-at post-at})
+      slack-resp->err-msg
+      (fn [err-msg]
+        (if err-msg
+          (assoc parsed
+            :response err-msg)
+          parsed)))))
+
+
+(defn unhandled-command
+  [parsed]
+  (t/error (format "unhandled command %s" (parsed :command)))
+  (assoc parsed :response (format "Whoops. I didn't understand that command")))
+
+
+(defn handle-parsed-cmd
+  [parsed]
+  (let [{:keys [command]} parsed
+        {:keys [type]} command]
+    (case type
+      :help (assoc parsed :response help)
+      :list (handle-list-cmd parsed)
+      :schedule (handle-schedule-cmd parsed)
+      (unhandled-command parsed))))
+
+
+(defn handle-cmd
+  [params]
   (->
-    (d/chain (future (process-cmd params))
-             (fn [processed]
-               (let [{:keys [result api-token channel url]} processed]
-                 (d/chain
-                   (if-let [{:keys [text post-at]} result]
-                     (slack/schedule-message {:channel channel
-                                              :token   api-token
-                                              :text    text
-                                              :post-at post-at})
-                     nil)
-                   (fn [resp]
-                     (if-let [err (u/get-some-> resp :body "error")]
-                       {:url      url
-                        :response (format "Woops, something went wrong: %s" err)}
-                       processed)))))
-             (fn [{:keys [response url]}]
-               (slack/slash-respond url response)))
+    (d/chain (future (parse-cmd params))
+             (fn [parsed]
+               (if (nil? (:api-token parsed))
+                 (assoc parsed
+                   :response (format "Whoops, looks like you need to login at %s" login-url))
+                 (handle-parsed-cmd parsed)))
+             (fn [{:keys [response-url response]}]
+               (slack/slash-respond response-url response)))
     (d/catch
       Exception
       (fn [^Exception e]
@@ -307,8 +346,7 @@
   "slash cmd webhook"
   [req]
   (let [req (u/parse-form-body req)
-        body (:body req)
-        _ (u/spy body :slack-cmd)]
+        body (:body req)]
     (time/in
       ;; spawn the cmd processor in the background, waiting
       ;; a short while to let the webhook respond before we
@@ -316,5 +354,5 @@
       ;; Time in ms
       100
       (fn []
-        (process-cmd-send-result body)))
+        (handle-cmd body)))
     (->resp)))
