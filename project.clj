@@ -36,6 +36,6 @@
                    :source-paths ["dev"]
                    :main user}}
   :bin {:name "slackat"
-        :bin-path "bin"
+        :bin-path "out"
         :jvm-opts ["-server" "-Dfile.encoding=utf-8" "$JVM_OPTS"]
         :custom-preamble "#!/bin/sh\nexec java {{{jvm-opts}}} -jar $0 \"$@\"\n"})
