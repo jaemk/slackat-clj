@@ -34,38 +34,38 @@
           status (atom nil)
           start (:aleph/request-arrived request)]
       (-> request
-        (d/chain
-          handler
-          (fn [resp]
-            (reset! status (:status resp))
-            resp))
-        (d/catch
-          Exception
-          (fn [^Exception e]
-            (let [info (ex-data e)]
-              (if (nil? info)
-                (do
-                  (reset! status 500)
-                  (t/error "UNKNOWN ERROR"
-                           {:type nil
-                            :exc-info e})
-                  (->resp {:status 500 :body "Something went wrong"}))
-                (do
-                  (reset! status (-> info :resp :status))
-                  (t/error "ERROR"
-                           {:type (:type info)
-                            :ex-data info})
-                  (:resp info))))))
-        (d/finally
-          (fn []
-            (let [elap-ms (-> (System/nanoTime)
-                              (- start)
-                              (/ 1000000.))]
-              (t/info "completed request"
-                      {:method method
-                       :uri uri
-                       :status @status
-                       :request-time-ms elap-ms}))))))))
+          (d/chain
+            handler
+            (fn [resp]
+              (reset! status (:status resp))
+              resp))
+          (d/catch
+            Exception
+            (fn [^Exception e]
+              (let [info (ex-data e)]
+                (if (nil? info)
+                  (do
+                    (reset! status 500)
+                    (t/error "UNKNOWN ERROR"
+                             {:type     nil
+                              :exc-info e})
+                    (->resp {:status 500 :body "Something went wrong"}))
+                  (do
+                    (reset! status (-> info :resp :status))
+                    (t/error "ERROR"
+                             {:type    (:type info)
+                              :ex-data info})
+                    (:resp info))))))
+          (d/finally
+            (fn []
+              (let [elap-ms (-> (System/nanoTime)
+                                (- start)
+                                (/ 1000000.))]
+                (t/info "completed request"
+                        {:method          method
+                         :uri             uri
+                         :status          @status
+                         :request-time-ms elap-ms}))))))))
 
 
 (defn- wrap-query-params
@@ -95,16 +95,16 @@
   "Start the server!"
   [& {:keys [port
              public]
-      :or {port (config/v :app-port)
-           public (config/v :app-public)}}]
+      :or   {port   (config/v :app-port)
+             public (config/v :app-public)}}]
   (let [host (if public "0.0.0.0" "127.0.0.1")
         addr (InetSocketAddress. ^String host ^Integer port)]
     (t/info "starting http server" {:addr addr})
     (reset! *http-server*
-      (let [s (init-server {:socket-address addr
-                            :raw-stream? true})]
-        (t/info "started http server" {:addr addr})
-        s))))
+            (let [s (init-server {:socket-address addr
+                                  :raw-stream?    true})]
+              (t/info "started http server" {:addr addr})
+              s))))
 
 
 (defn stop-server!
@@ -128,14 +128,14 @@
 (defn start-repl!
   [& {:keys [port
              public]
-      :or {port (config/v :repl-port)
-           public (config/v :repl-public)}}]
+      :or   {port   (config/v :repl-port)
+             public (config/v :repl-public)}}]
   (let [host (if public "0.0.0.0" "127.0.0.1")]
     (t/info "starting nrepl server"
             {:host host
              :port port})
     (reset! *repl-server*
-      (nrepl.server/start-server :bind host :port port))))
+            (nrepl.server/start-server :bind host :port port))))
 
 
 (defn stop-repl!
