@@ -1,4 +1,4 @@
-FROM clojure:lein-alpine
+FROM clojure:lein
 
 RUN mkdir /app
 WORKDIR /app
@@ -7,4 +7,4 @@ RUN lein deps
 COPY . /app
 RUN lein bin
 
-CMD ["bin/slackat"]
+CMD ["out/slackat"]
