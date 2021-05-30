@@ -157,7 +157,8 @@
 (defn -main
   [& _args]
   (t/info "checking config"
-          {:num-threads (config/v :num-threads)})
+          {:db-max-connections (config/v :db-max-connections)
+           :num-threads (config/v :num-threads)})
   (cmd/migrate!)
   (start-repl!)
   (start-server!))

@@ -15,8 +15,8 @@
 
 
 (defn env [k & {:keys [default parse]
-                :or {default nil
-                     parse identity}}]
+                :or   {default nil
+                       parse   identity}}]
   (if-let [value (System/getenv k)]
     (parse value)
     default))
@@ -37,6 +37,8 @@
      :db-name     (env "DATABASE_NAME")
      :db-user     (env "DATABASE_USER")
      :db-password (env "DATABASE_PASSWORD")
+     :db-max-connections
+                  (env "DATABASE_MAX_CONNECTIONS" :default nil :parse #(some-> % u/trim-to-nil u/parse-int))
      :app-port    (env "PORT" :default 3003 :parse u/parse-int)
      :app-public  (env "PUBLIC" :default false :parse u/parse-bool)
      :repl-port   (env "REPL_PORT" :default 3999 :parse u/parse-int)
@@ -76,7 +78,7 @@
 
 (defn v
   [k & {:keys [default]
-        :or {default nil}}]
+        :or   {default nil}}]
   (if-let [value (get @values k)]
     value
     default))
@@ -107,14 +109,14 @@
         -second (second log-args)
         data {:event nil}]
     (cond
-      (= n-args 0)            data
+      (= n-args 0) data
       (and (= n-args 1)
-           (map? -first))     (merge data -first)
+           (map? -first)) (merge data -first)
       (and (= n-args 1)
-           (string? -first))  {:event -first}
+           (string? -first)) {:event -first}
       (and (= n-args 2)
            (string? -first)
-           (map? -second))    (merge {:event -first} -second)
+           (map? -second)) (merge {:event -first} -second)
       :else (merge data {:args log-args}))))
 
 (defn build-log-map [data]
@@ -127,10 +129,10 @@
         log-data (if-not (nil? ?msg-fmt)
                    {:event (apply format ?msg-fmt vargs)}
                    (log-args->map vargs))]
-    (-> {:_/level level
-         :_/timestamp timestamp-utc
-         :_/timestamp-local timestamp-local
-         :_/source-namespace ?ns-str
+    (-> {:_/level                 level
+         :_/timestamp             timestamp-utc
+         :_/timestamp-local       timestamp-local
+         :_/source-namespace      ?ns-str
          :_/source-namespace-line ?line}
         (merge log-data)
         fmt-exc-info)))

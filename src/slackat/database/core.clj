@@ -21,7 +21,7 @@
    :database-name     (config/v :db-name)
    :server-name       (config/v :db-host)
    :port-number       (config/v :db-port)
-   :maximum-pool-size (max 10 (config/v :num-threads))})
+   :maximum-pool-size (or (config/v :db-max-connections) (config/v :num-threads))})
 
 (defonce datasource (delay (make-datasource db-config)))
 
